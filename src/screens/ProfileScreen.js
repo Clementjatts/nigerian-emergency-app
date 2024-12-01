@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { User, Gear, Bell, Phone, Lock, CaretRight } from 'phosphor-react-native';
-import { firebaseAuth, firebaseDB, firebaseStorage } from '../utils/firebase';
+import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
 import ProfileEditor from '../components/ProfileEditor';
 import ProfilePicture from '../components/ProfilePicture';
 import SettingsManager from '../components/SettingsManager';
@@ -18,6 +19,7 @@ import EmergencyContactManager from '../components/EmergencyContactManager';
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
+  const { user: authUser, logout } = useAuth();
   const [loading, setLoading] = useState(false);
   const [imageLoading, setImageLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -41,25 +43,21 @@ const ProfileScreen = () => {
 
   useEffect(() => {
     loadProfileData();
-    setupProfileListener();
   }, []);
 
   const loadProfileData = async () => {
     try {
       setLoading(true);
-      const user = firebaseAuth.getCurrentUser();
-      if (user) {
-        const userProfile = await firebaseDB.getUserProfile(user.uid);
-        if (userProfile) {
-          setProfile(prev => ({ ...prev, ...userProfile }));
-        }
-        const userSettings = await firebaseDB.getUserSettings(user.uid);
-        if (userSettings) {
-          setSettings(prev => ({ ...prev, ...userSettings }));
-        }
-        const contacts = await firebaseDB.getEmergencyContacts(user.uid);
-        setEmergencyContacts(contacts || []);
+      const response = await axios.get(`https://your-express-api.com/profile/${authUser.uid}`);
+      if (response.data) {
+        setProfile(response.data);
       }
+      const settingsResponse = await axios.get(`https://your-express-api.com/settings/${authUser.uid}`);
+      if (settingsResponse.data) {
+        setSettings(settingsResponse.data);
+      }
+      const contactsResponse = await axios.get(`https://your-express-api.com/emergency-contacts/${authUser.uid}`);
+      setEmergencyContacts(contactsResponse.data || []);
     } catch (error) {
       Alert.alert('Error', 'Failed to load profile data');
     } finally {
@@ -67,26 +65,12 @@ const ProfileScreen = () => {
     }
   };
 
-  const setupProfileListener = () => {
-    const user = firebaseAuth.getCurrentUser();
-    if (user) {
-      return firebaseDB.onUserProfileChange(user.uid, (updatedProfile) => {
-        if (updatedProfile) {
-          setProfile(prev => ({ ...prev, ...updatedProfile }));
-        }
-      });
-    }
-  };
-
   const handleProfileUpdate = async (updatedProfile) => {
     try {
       setLoading(true);
-      const user = firebaseAuth.getCurrentUser();
-      if (user) {
-        await firebaseDB.updateUserProfile(user.uid, updatedProfile);
-        setEditMode(false);
-        Alert.alert('Success', 'Profile updated successfully');
-      }
+      await axios.put(`https://your-express-api.com/profile/${authUser.uid}`, updatedProfile);
+      setEditMode(false);
+      Alert.alert('Success', 'Profile updated successfully');
     } catch (error) {
       Alert.alert('Error', 'Failed to update profile');
     } finally {
@@ -96,11 +80,8 @@ const ProfileScreen = () => {
 
   const handleSettingsUpdate = async (updatedSettings) => {
     try {
-      const user = firebaseAuth.getCurrentUser();
-      if (user) {
-        await firebaseDB.updateUserSettings(user.uid, updatedSettings);
-        setSettings(updatedSettings);
-      }
+      await axios.put(`https://your-express-api.com/settings/${authUser.uid}`, updatedSettings);
+      setSettings(updatedSettings);
     } catch (error) {
       Alert.alert('Error', 'Failed to update settings');
     }
@@ -109,12 +90,14 @@ const ProfileScreen = () => {
   const handleImageUpload = async (uri) => {
     try {
       setImageLoading(true);
-      const user = firebaseAuth.getCurrentUser();
-      if (user) {
-        const imageRef = `profiles/${user.uid}/avatar.jpg`;
-        const downloadUrl = await firebaseStorage.uploadImage(uri, imageRef);
-        await firebaseDB.updateUserProfile(user.uid, { avatar: downloadUrl });
-      }
+      const formData = new FormData();
+      formData.append('image', {
+        uri,
+        type: 'image/jpeg',
+        name: 'avatar.jpg',
+      });
+      const response = await axios.post(`https://your-express-api.com/upload-image/${authUser.uid}`, formData);
+      await axios.put(`https://your-express-api.com/profile/${authUser.uid}`, { avatar: response.data });
     } catch (error) {
       Alert.alert('Error', 'Failed to upload profile picture');
     } finally {
@@ -122,10 +105,22 @@ const ProfileScreen = () => {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Login' }],
+      });
+    } catch (error) {
+      Alert.alert('Error', 'Failed to logout');
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2A9D8F" />
+        <ActivityIndicator size="large" color="#007AFF" />
       </View>
     );
   }
@@ -135,18 +130,11 @@ const ProfileScreen = () => {
       <View style={styles.header}>
         <ProfilePicture
           uri={profile.avatar}
-          onImageSelected={handleImageUpload}
+          onImageSelect={handleImageUpload}
           loading={imageLoading}
-          size={120}
         />
-        <TouchableOpacity
-          style={styles.editButton}
-          onPress={() => setEditMode(!editMode)}
-        >
-          <Text style={styles.editButtonText}>
-            {editMode ? 'Cancel Edit' : 'Edit Profile'}
-          </Text>
-        </TouchableOpacity>
+        <Text style={styles.name}>{profile.name}</Text>
+        <Text style={styles.email}>{profile.email}</Text>
       </View>
 
       {editMode ? (
@@ -154,39 +142,52 @@ const ProfileScreen = () => {
           profile={profile}
           onSave={handleProfileUpdate}
           onCancel={() => setEditMode(false)}
-          loading={loading}
         />
       ) : (
-        <>
-          <View style={styles.profileInfo}>
-            <Text style={styles.name}>{profile.name}</Text>
-            <Text style={styles.email}>{profile.email}</Text>
-            <Text style={styles.phone}>{profile.phone}</Text>
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.editButton}
+            onPress={() => setEditMode(true)}
+          >
+            <Text style={styles.editButtonText}>Edit Profile</Text>
+          </TouchableOpacity>
+
+          <View style={styles.infoItem}>
+            <User size={24} color="#666" />
+            <Text style={styles.infoLabel}>Blood Type:</Text>
+            <Text style={styles.infoValue}>{profile.bloodType || 'Not set'}</Text>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Medical Information</Text>
-            <View style={styles.medicalInfo}>
-              <Text style={styles.medicalLabel}>Blood Type:</Text>
-              <Text style={styles.medicalValue}>{profile.bloodType || 'Not specified'}</Text>
-              <Text style={styles.medicalLabel}>Allergies:</Text>
-              <Text style={styles.medicalValue}>{profile.allergies || 'None'}</Text>
-              <Text style={styles.medicalLabel}>Medications:</Text>
-              <Text style={styles.medicalValue}>{profile.medications || 'None'}</Text>
-            </View>
+          <View style={styles.infoItem}>
+            <Phone size={24} color="#666" />
+            <Text style={styles.infoLabel}>Phone:</Text>
+            <Text style={styles.infoValue}>{profile.phone || 'Not set'}</Text>
           </View>
-
-          <SettingsManager
-            settings={settings}
-            onSettingChange={handleSettingsUpdate}
-          />
-
-          <EmergencyContactManager
-            contacts={emergencyContacts}
-            onContactsUpdate={setEmergencyContacts}
-          />
-        </>
+        </View>
       )}
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Settings</Text>
+        <SettingsManager
+          settings={settings}
+          onUpdate={handleSettingsUpdate}
+        />
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Emergency Contacts</Text>
+        <EmergencyContactManager
+          contacts={emergencyContacts}
+          onUpdate={setEmergencyContacts}
+        />
+      </View>
+
+      <TouchableOpacity
+        style={styles.logoutButton}
+        onPress={handleLogout}
+      >
+        <Text style={styles.logoutButtonText}>Logout</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 };
@@ -206,66 +207,69 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  editButton: {
-    marginTop: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    backgroundColor: '#2A9D8F',
-    borderRadius: 20,
-  },
-  editButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  profileInfo: {
-    padding: 20,
-    backgroundColor: '#fff',
-    marginBottom: 8,
+    borderBottomColor: '#e0e0e0',
   },
   name: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 8,
+    marginTop: 10,
   },
   email: {
     fontSize: 16,
     color: '#666',
-    marginBottom: 4,
-  },
-  phone: {
-    fontSize: 16,
-    color: '#666',
+    marginTop: 5,
   },
   section: {
-    marginBottom: 8,
     backgroundColor: '#fff',
-    padding: 20,
+    marginTop: 20,
+    padding: 15,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#e0e0e0',
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#333',
-    marginBottom: 16,
+    fontWeight: 'bold',
+    marginBottom: 15,
   },
-  medicalInfo: {
-    backgroundColor: '#f8f8f8',
-    padding: 16,
-    borderRadius: 8,
+  infoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
   },
-  medicalLabel: {
+  infoLabel: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginTop: 8,
-  },
-  medicalValue: {
-    fontSize: 16,
+    marginLeft: 10,
     color: '#666',
-    marginBottom: 8,
+    width: 100,
+  },
+  infoValue: {
+    fontSize: 16,
+    flex: 1,
+  },
+  editButton: {
+    backgroundColor: '#007AFF',
+    padding: 10,
+    borderRadius: 5,
+    marginBottom: 15,
+  },
+  editButtonText: {
+    color: '#fff',
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  logoutButton: {
+    backgroundColor: '#FF3B30',
+    padding: 15,
+    margin: 20,
+    borderRadius: 5,
+  },
+  logoutButtonText: {
+    color: '#fff',
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '500',
   },
 });
 

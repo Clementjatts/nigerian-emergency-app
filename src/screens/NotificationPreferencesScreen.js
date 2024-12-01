@@ -12,7 +12,18 @@ import { Text } from 'react-native-paper';
 import notificationService from '../utils/notificationService';
 
 const NotificationPreferencesScreen = () => {
-  const [preferences, setPreferences] = useState(null);
+  const [preferences, setPreferences] = useState({
+    emergencyAlerts: true,
+    responderUpdates: true,
+    communityAlerts: true,
+    soundEnabled: true,
+    vibrationEnabled: true,
+    quietHours: {
+      enabled: false,
+      start: '22:00',
+      end: '07:00'
+    }
+  });
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -24,8 +35,19 @@ const NotificationPreferencesScreen = () => {
   const loadPreferences = async () => {
     try {
       const prefs = await notificationService.getNotificationPreferences();
-      setPreferences(prefs);
+      if (prefs) {
+        // Ensure all required fields exist
+        setPreferences(prev => ({
+          ...prev,
+          ...prefs,
+          quietHours: {
+            ...prev.quietHours,
+            ...(prefs.quietHours || {})
+          }
+        }));
+      }
     } catch (error) {
+      console.error('Failed to load preferences:', error);
       Alert.alert('Error', 'Failed to load notification preferences');
     } finally {
       setLoading(false);
@@ -50,10 +72,9 @@ const NotificationPreferencesScreen = () => {
   };
 
   const handleTimeChange = (event, selectedTime, type) => {
-    if (type === 'start') {
-      setShowStartPicker(false);
-    } else {
-      setShowEndPicker(false);
+    if (event.type === 'dismissed') {
+      type === 'start' ? setShowStartPicker(false) : setShowEndPicker(false);
+      return;
     }
 
     if (selectedTime) {
@@ -69,6 +90,8 @@ const NotificationPreferencesScreen = () => {
         },
       }));
     }
+    
+    type === 'start' ? setShowStartPicker(false) : setShowEndPicker(false);
   };
 
   const savePreferences = async () => {
@@ -171,7 +194,7 @@ const NotificationPreferencesScreen = () => {
 
         {showStartPicker && (
           <DateTimePicker
-            value={new Date(\`2000-01-01T\${preferences.quietHours.start}:00\`)}
+            value={new Date(`2000-01-01T${preferences.quietHours.start}:00`)}
             mode="time"
             is24Hour={true}
             display="default"
@@ -183,7 +206,7 @@ const NotificationPreferencesScreen = () => {
 
         {showEndPicker && (
           <DateTimePicker
-            value={new Date(\`2000-01-01T\${preferences.quietHours.end}:00\`)}
+            value={new Date(`2000-01-01T${preferences.quietHours.end}:00`)}
             mode="time"
             is24Hour={true}
             display="default"
@@ -194,7 +217,17 @@ const NotificationPreferencesScreen = () => {
         )}
       </View>
 
-      <TouchableOpacity style={styles.saveButton} onPress={savePreferences}>
+      <TouchableOpacity 
+        style={[
+          styles.saveButton,
+          !preferences.quietHours.enabled || 
+          (preferences.quietHours.start && preferences.quietHours.end) 
+          ? {} 
+          : styles.saveButtonDisabled
+        ]} 
+        onPress={savePreferences}
+        disabled={!preferences.quietHours.enabled || !(preferences.quietHours.start && preferences.quietHours.end)}
+      >
         <Text style={styles.saveButtonText}>Save Preferences</Text>
       </TouchableOpacity>
     </ScrollView>
@@ -236,6 +269,9 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 8,
     alignItems: 'center',
+  },
+  saveButtonDisabled: {
+    backgroundColor: '#ccc',
   },
   saveButtonText: {
     color: '#fff',
