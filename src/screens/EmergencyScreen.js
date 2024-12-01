@@ -12,6 +12,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Phone, FirstAid, Siren, Police, MapPin } from 'phosphor-react-native';
 import EmergencyButton from '../components/EmergencyButton';
+import EmergencyStatus from '../components/EmergencyStatus';
+import EmergencyConfirmation from '../components/EmergencyConfirmation';
+import EmergencyQuickDial from '../components/EmergencyQuickDial';
 import { api } from '../services/api';
 
 const EMERGENCY_TYPES = {
@@ -47,6 +50,10 @@ const EmergencyScreen = ({ route, navigation }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [alertSent, setAlertSent] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [emergencyStatus, setEmergencyStatus] = useState(null);
+  const [responderInfo, setResponderInfo] = useState(null);
+  const [estimatedTime, setEstimatedTime] = useState(null);
 
   const emergencyType = route.params?.emergencyType || 'police';
   const emergency = EMERGENCY_TYPES[emergencyType];
@@ -68,98 +75,93 @@ const EmergencyScreen = ({ route, navigation }) => {
     })();
   }, []);
 
-  const handleEmergencyTriggered = async (location) => {
+  const handleEmergencyPress = async () => {
+    setShowConfirmation(true);
+  };
+
+  const handleConfirmEmergency = async () => {
+    setShowConfirmation(false);
     setIsLoading(true);
+    setEmergencyStatus('PENDING');
+
     try {
-      // Send emergency alert to backend
-      await api.createEmergency({
-        type: emergencyType,
-        location: {
-          latitude: location.coords.latitude,
-          longitude: location.coords.longitude,
-        },
-        isPanicMode: route.params?.isPanicMode || false,
+      // Simulate API call for demo purposes
+      const response = await new Promise((resolve) => {
+        setTimeout(() => {
+          resolve({
+            status: 'ACCEPTED',
+            responder: {
+              unit: 'Emergency Response Unit 7',
+              distance: 2.5,
+            },
+            estimatedTime: 8,
+          });
+        }, 3000);
       });
 
+      setEmergencyStatus(response.status);
+      setResponderInfo(response.responder);
+      setEstimatedTime(response.estimatedTime);
       setAlertSent(true);
-      Alert.alert(
-        'Emergency Alert Sent',
-        'Emergency services have been notified and are on their way. Stay calm and follow any instructions provided.',
-        [{ text: 'OK' }]
-      );
+      Vibration.vibrate();
     } catch (error) {
-      Alert.alert('Error', 'Failed to send emergency alert. Please try again or call emergency services directly.');
+      setEmergencyStatus('ERROR');
+      console.error('Error sending emergency alert:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleEmergencyCall = () => {
-    // Handle emergency call
-  };
-
-  const handleServiceCall = (serviceType) => {
-    // Handle service call
+  const handleCancelEmergency = () => {
+    setShowConfirmation(false);
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        <View style={styles.header}>
-          <Text style={styles.title}>{emergency.title}</Text>
-          <emergency.icon size={40} color={emergency.color} />
-        </View>
-
-        <View style={styles.sosContainer}>
-          <EmergencyButton
-            title="Call Emergency"
-            icon={Phone}
-            onPress={handleEmergencyCall}
-            color="#E63946"
+      <ScrollView style={styles.scrollContainer}>
+        {emergencyStatus && (
+          <EmergencyStatus
+            status={emergencyStatus}
+            estimatedTime={estimatedTime}
+            responderInfo={responderInfo}
           />
-          <EmergencyButton
-            title="Medical Help"
-            icon={FirstAid}
-            onPress={() => handleServiceCall('medical')}
-            color="#2A9D8F"
-          />
-          <EmergencyButton
-            title="Police"
-            icon={Police}
-            onPress={() => handleServiceCall('police')}
-            color="#457B9D"
-          />
-          <EmergencyButton
-            title="Fire Service"
-            icon={Siren}
-            onPress={() => handleServiceCall('fire')}
-            color="#E76F51"
-          />
-          <Text style={styles.sosText}>
-            {isRecording ? 'Recording in Panic Mode' : 'Hold for Panic Mode'}
-          </Text>
-        </View>
-
-        <View style={styles.infoContainer}>
-          <Text style={styles.infoText}>
-            Tap the SOS button for immediate emergency alert{'\n'}
-            Hold the button to activate Panic Mode with video/audio recording
-          </Text>
-        </View>
-
-        {isLoading && (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={emergency.color} />
-            <Text style={styles.loadingText}>Sending Emergency Alert...</Text>
-          </View>
         )}
 
-        {alertSent && (
-          <View style={styles.alertSentContainer}>
-            <MapPin size={50} color="green" />
-            <Text style={styles.alertSentText}>Emergency Alert Sent</Text>
-          </View>
-        )}
+        <View style={styles.buttonContainer}>
+          <EmergencyButton
+            type={EMERGENCY_TYPES[emergencyType]}
+            onPress={handleEmergencyPress}
+            isLoading={isLoading}
+          />
+        </View>
+
+        <EmergencyQuickDial
+          contacts={[
+            {
+              id: '1',
+              name: 'National Emergency',
+              number: '112',
+              type: 'Emergency Services',
+              isFavorite: true,
+            },
+            {
+              id: '2',
+              name: 'Local Police',
+              number: '199',
+              type: 'Police',
+              isFavorite: false,
+            },
+          ]}
+          onAddContact={() => navigation.navigate('AddEmergencyContact')}
+        />
+
+        <EmergencyConfirmation
+          visible={showConfirmation}
+          onConfirm={handleConfirmEmergency}
+          onCancel={handleCancelEmergency}
+          emergencyType={EMERGENCY_TYPES[emergencyType].title}
+          loading={isLoading}
+        />
       </ScrollView>
     </SafeAreaView>
   );
@@ -174,51 +176,10 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     padding: 20,
   },
-  header: {
-    alignItems: 'center',
-    marginBottom: 30,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  sosContainer: {
+  buttonContainer: {
     alignItems: 'center',
     marginVertical: 30,
   },
-  sosText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#666',
-  },
-  infoContainer: {
-    padding: 20,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 10,
-    marginVertical: 20,
-  },
-  infoText: {
-    textAlign: 'center',
-    lineHeight: 24,
-    color: '#444',
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  loadingText: {
-    marginTop: 10,
-    color: '#666',
-  },
-  alertSentContainer: {
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  alertSentText: {
-    marginTop: 10,
-    fontSize: 18,
-    color: 'green',
-    fontWeight: 'bold',
-  },
 });
+
+export default EmergencyScreen;

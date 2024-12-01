@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -6,154 +6,277 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  Modal,
+  TextInput,
+  FlatList,
 } from 'react-native';
-import { MapPin, Download } from 'phosphor-react-native';
-import EmergencyMap from '../components/EmergencyMap';
-import * as EmergencyLocationService from '../services/__mocks__/emergencyLocationService';
-import * as OfflineStorageService from '../services/__mocks__/offlineStorageService';
+import { MapPin, Download, Star, Navigation, X } from 'phosphor-react-native';
+import MapView, { Marker, Polyline } from 'react-native-maps';
+import * as Location from 'expo-location';
+import mapTileManager from '../services/mapTileManager';
+import offlineRoutingService from '../services/offlineRoutingService';
+import { useNetInfo } from '@react-native-community/netinfo';
 
 const OfflineMapViewer = () => {
   const [currentLocation, setCurrentLocation] = useState(null);
+  const [selectedLocation, setSelectedLocation] = useState(null);
   const [hasOfflineData, setHasOfflineData] = useState(false);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [favoriteLocations, setFavoriteLocations] = useState([]);
+  const [showFavorites, setShowFavorites] = useState(false);
+  const [showSaveLocation, setShowSaveLocation] = useState(false);
+  const [locationName, setLocationName] = useState('');
+  const [route, setRoute] = useState(null);
+  const mapRef = useRef(null);
+  const netInfo = useNetInfo();
 
   useEffect(() => {
     getCurrentLocation();
-    checkOfflineData();
+    loadFavoriteLocations();
+    mapTileManager.setProgressCallback(setDownloadProgress);
   }, []);
 
   const getCurrentLocation = async () => {
     try {
-      const location = await EmergencyLocationService.getCurrentLocation();
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission denied', 'Location permission is required for this feature');
+        return;
+      }
+
+      const location = await Location.getCurrentPositionAsync({});
       setCurrentLocation({
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
-        latitudeDelta: 0.0922,
-        longitudeDelta: 0.0421,
       });
+      setLoading(false);
     } catch (error) {
-      console.error('Error getting current location:', error);
-    }
-  };
-
-  const checkOfflineData = async () => {
-    try {
-      const hasData = await OfflineStorageService.isOfflineDataAvailable();
-      setHasOfflineData(hasData);
-    } catch (error) {
-      console.error('Error checking offline data:', error);
-    } finally {
+      Alert.alert('Error', 'Failed to get current location');
       setLoading(false);
     }
   };
 
-  const handleDownload = async () => {
-    if (!currentLocation) {
-      Alert.alert(
-        'Location Required',
-        'Please enable location services to download offline maps.'
-      );
-      return;
-    }
+  const downloadOfflineData = async () => {
+    if (!currentLocation) return;
 
-    setDownloading(true);
     try {
-      await OfflineStorageService.downloadOfflineArea(
+      setDownloading(true);
+      await mapTileManager.downloadRegion(
         currentLocation.latitude,
         currentLocation.longitude,
-        5000 // 5km radius
+        5 // 5km radius
       );
       setHasOfflineData(true);
-      Alert.alert(
-        'Download Complete',
-        'Offline map data has been downloaded successfully.'
-      );
+      Alert.alert('Success', 'Offline map data downloaded successfully');
     } catch (error) {
-      console.error('Error downloading offline data:', error);
-      Alert.alert(
-        'Download Failed',
-        'Failed to download offline map data. Please try again.'
-      );
+      Alert.alert('Error', 'Failed to download offline map data');
     } finally {
       setDownloading(false);
+      setDownloadProgress(0);
     }
   };
 
-  const handleClearData = async () => {
-    Alert.alert(
-      'Clear Offline Data',
-      'Are you sure you want to delete all offline map data?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await OfflineStorageService.clearOfflineData();
-              setHasOfflineData(false);
-              Alert.alert('Success', 'Offline map data has been cleared.');
-            } catch (error) {
-              console.error('Error clearing offline data:', error);
-              Alert.alert(
-                'Error',
-                'Failed to clear offline map data. Please try again.'
-              );
-            }
-          },
-        },
-      ]
-    );
+  const loadFavoriteLocations = async () => {
+    try {
+      const locations = await offlineRoutingService.getFavoriteLocations();
+      setFavoriteLocations(locations);
+    } catch (error) {
+      console.error('Error loading favorite locations:', error);
+    }
+  };
+
+  const handleMapLongPress = (event) => {
+    setSelectedLocation(event.nativeEvent.coordinate);
+    setShowSaveLocation(true);
+  };
+
+  const saveLocation = async () => {
+    if (!selectedLocation || !locationName) return;
+
+    try {
+      await offlineRoutingService.saveFavoriteLocation({
+        id: Date.now().toString(),
+        name: locationName,
+        ...selectedLocation,
+        address: 'Custom Location', // You can implement reverse geocoding here
+      });
+      await loadFavoriteLocations();
+      setShowSaveLocation(false);
+      setLocationName('');
+      Alert.alert('Success', 'Location saved to favorites');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to save location');
+    }
+  };
+
+  const calculateRoute = async (destination) => {
+    if (!currentLocation) return;
+
+    try {
+      const routeData = await offlineRoutingService.findRoute(currentLocation, destination);
+      if (routeData) {
+        setRoute(routeData);
+        mapRef.current?.fitToCoordinates([currentLocation, destination], {
+          edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+          animated: true,
+        });
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to calculate route');
+    }
   };
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" testID="loading-indicator" />
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#2A9D8F" />
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <EmergencyMap
-        initialRegion={currentLocation}
-        showFacilities={false}
-        onRegionChange={(region) => {
-          // Handle region change
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        initialRegion={{
+          ...currentLocation,
+          latitudeDelta: 0.0922,
+          longitudeDelta: 0.0421,
         }}
-      />
-      <View style={styles.overlay}>
-        {hasOfflineData ? (
-          <>
-            <Text style={styles.statusText}>Offline Map Available</Text>
-            <TouchableOpacity
-              style={[styles.button, styles.clearButton]}
-              onPress={handleClearData}
-            >
-              <MapPin size={24} color="#FF3B30" weight="fill" />
-              <Text style={[styles.buttonText, styles.clearButtonText]}>
-                Clear Offline Data
-              </Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          <TouchableOpacity
-            style={[styles.button, downloading && styles.buttonDisabled]}
-            onPress={handleDownload}
-            disabled={downloading}
-          >
-            <Download size={24} color="#FFFFFF" />
-            <Text style={styles.buttonText}>
-              {downloading ? 'Downloading...' : 'Download This Area'}
-            </Text>
-          </TouchableOpacity>
+        onLongPress={handleMapLongPress}
+      >
+        {currentLocation && (
+          <Marker
+            coordinate={currentLocation}
+            title="You are here"
+            pinColor="#2A9D8F"
+          />
         )}
+        {favoriteLocations.map((location) => (
+          <Marker
+            key={location.id}
+            coordinate={{
+              latitude: location.latitude,
+              longitude: location.longitude,
+            }}
+            title={location.name}
+            pinColor="#E9C46A"
+          >
+            <Star size={24} color="#E9C46A" weight="fill" />
+          </Marker>
+        ))}
+        {route && (
+          <Polyline
+            coordinates={route}
+            strokeColor="#2A9D8F"
+            strokeWidth={3}
+          />
+        )}
+      </MapView>
+
+      <View style={styles.buttonContainer}>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={() => setShowFavorites(true)}
+        >
+          <Star size={24} color="#fff" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.button, downloading && styles.buttonDisabled]}
+          onPress={downloadOfflineData}
+          disabled={downloading}
+        >
+          {downloading ? (
+            <View>
+              <ActivityIndicator color="#fff" />
+              <Text style={styles.progressText}>{Math.round(downloadProgress * 100)}%</Text>
+            </View>
+          ) : (
+            <Download size={24} color="#fff" />
+          )}
+        </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={showSaveLocation}
+        transparent
+        animationType="slide"
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Save Location</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter location name"
+              value={locationName}
+              onChangeText={setLocationName}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={() => {
+                  setShowSaveLocation(false);
+                  setLocationName('');
+                }}
+              >
+                <Text style={styles.buttonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.saveButton]}
+                onPress={saveLocation}
+              >
+                <Text style={styles.buttonText}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showFavorites}
+        transparent
+        animationType="slide"
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Favorite Locations</Text>
+              <TouchableOpacity
+                onPress={() => setShowFavorites(false)}
+                style={styles.closeButton}
+              >
+                <X size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={favoriteLocations}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.favoriteItem}
+                  onPress={() => {
+                    calculateRoute({
+                      latitude: item.latitude,
+                      longitude: item.longitude,
+                    });
+                    setShowFavorites(false);
+                  }}
+                >
+                  <View style={styles.favoriteInfo}>
+                    <Text style={styles.favoriteName}>{item.name}</Text>
+                    <Text style={styles.favoriteAddress}>{item.address}</Text>
+                  </View>
+                  <Navigation size={24} color="#2A9D8F" />
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -162,57 +285,109 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  loadingContainer: {
+  centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  overlay: {
+  map: {
+    flex: 1,
+  },
+  buttonContainer: {
     position: 'absolute',
-    bottom: 20,
-    left: 20,
-    right: 20,
-    alignItems: 'center',
+    right: 16,
+    bottom: 16,
+    gap: 8,
   },
   button: {
-    flexDirection: 'row',
+    backgroundColor: '#2A9D8F',
+    padding: 12,
+    borderRadius: 24,
     alignItems: 'center',
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 25,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    justifyContent: 'center',
   },
   buttonDisabled: {
-    backgroundColor: '#999999',
+    opacity: 0.7,
+  },
+  progressText: {
+    color: '#fff',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  saveButton: {
+    backgroundColor: '#2A9D8F',
+  },
+  cancelButton: {
+    backgroundColor: '#E63946',
   },
   buttonText: {
-    color: '#FFFFFF',
+    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
-    marginLeft: 8,
   },
-  clearButton: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#FF3B30',
+  favoriteItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
   },
-  clearButtonText: {
-    color: '#FF3B30',
+  favoriteInfo: {
+    flex: 1,
   },
-  statusText: {
-    backgroundColor: '#4CD964',
-    color: '#FFFFFF',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 15,
-    marginBottom: 10,
-    fontSize: 14,
+  favoriteName: {
+    fontSize: 16,
     fontWeight: '600',
+    color: '#333',
+  },
+  favoriteAddress: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
   },
 });
 

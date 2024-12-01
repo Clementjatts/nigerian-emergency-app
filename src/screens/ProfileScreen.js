@@ -4,28 +4,31 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Image,
   ScrollView,
-  Switch,
   Alert,
   ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import * as ImagePicker from 'expo-image-picker';
 import { User, Gear, Bell, Phone, Lock, CaretRight } from 'phosphor-react-native';
-import { firebaseAuth, firebaseDB } from '../utils/firebase';
-import storage from '@react-native-firebase/storage';
-import { firestore } from '../utils/firebase';
+import { firebaseAuth, firebaseDB, firebaseStorage } from '../utils/firebase';
+import ProfileEditor from '../components/ProfileEditor';
+import ProfilePicture from '../components/ProfilePicture';
+import SettingsManager from '../components/SettingsManager';
 import EmergencyContactManager from '../components/EmergencyContactManager';
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
   const [loading, setLoading] = useState(false);
+  const [imageLoading, setImageLoading] = useState(false);
+  const [editMode, setEditMode] = useState(false);
   const [profile, setProfile] = useState({
     name: '',
     email: '',
     phone: '',
     avatar: null,
+    bloodType: '',
+    allergies: '',
+    medications: '',
   });
   const [settings, setSettings] = useState({
     notificationsEnabled: true,
@@ -41,6 +44,29 @@ const ProfileScreen = () => {
     setupProfileListener();
   }, []);
 
+  const loadProfileData = async () => {
+    try {
+      setLoading(true);
+      const user = firebaseAuth.getCurrentUser();
+      if (user) {
+        const userProfile = await firebaseDB.getUserProfile(user.uid);
+        if (userProfile) {
+          setProfile(prev => ({ ...prev, ...userProfile }));
+        }
+        const userSettings = await firebaseDB.getUserSettings(user.uid);
+        if (userSettings) {
+          setSettings(prev => ({ ...prev, ...userSettings }));
+        }
+        const contacts = await firebaseDB.getEmergencyContacts(user.uid);
+        setEmergencyContacts(contacts || []);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to load profile data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const setupProfileListener = () => {
     const user = firebaseAuth.getCurrentUser();
     if (user) {
@@ -52,129 +78,54 @@ const ProfileScreen = () => {
     }
   };
 
-  const loadProfileData = async () => {
+  const handleProfileUpdate = async (updatedProfile) => {
     try {
       setLoading(true);
       const user = firebaseAuth.getCurrentUser();
-      if (!user) {
-        navigation.navigate('Login');
-        return;
+      if (user) {
+        await firebaseDB.updateUserProfile(user.uid, updatedProfile);
+        setEditMode(false);
+        Alert.alert('Success', 'Profile updated successfully');
       }
-
-      const userDoc = await firestore()
-        .collection('users')
-        .doc(user.uid)
-        .get();
-
-      if (userDoc.exists) {
-        const userData = userDoc.data();
-        setProfile({
-          name: userData.name || '',
-          email: userData.email || '',
-          phone: userData.phone || '',
-          avatar: userData.avatar || null,
-        });
-        setSettings(userData.settings || settings);
-      }
-
-      const contacts = await firebaseDB.getEmergencyContacts();
-      setEmergencyContacts(contacts);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to load profile data');
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleUpdateProfile = async () => {
-    try {
-      setLoading(true);
-      await firebaseAuth.updateUserProfile({
-        ...profile,
-        settings,
-      });
-      Alert.alert('Success', 'Profile updated successfully');
     } catch (error) {
       Alert.alert('Error', 'Failed to update profile');
-      console.error(error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleImagePick = async () => {
+  const handleSettingsUpdate = async (updatedSettings) => {
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.5,
-      });
-
-      if (!result.canceled) {
-        setLoading(true);
-        const user = firebaseAuth.getCurrentUser();
-        const reference = storage().ref(`avatars/${user.uid}`);
-        
-        // Convert image to blob
-        const response = await fetch(result.assets[0].uri);
-        const blob = await response.blob();
-        
-        // Upload image
-        await reference.put(blob);
-        
-        // Get download URL
-        const downloadURL = await reference.getDownloadURL();
-        
-        // Update profile
-        await firebaseAuth.updateUserProfile({
-          ...profile,
-          avatar: downloadURL,
-        });
-        
-        setProfile(prev => ({ ...prev, avatar: downloadURL }));
-        setLoading(false);
+      const user = firebaseAuth.getCurrentUser();
+      if (user) {
+        await firebaseDB.updateUserSettings(user.uid, updatedSettings);
+        setSettings(updatedSettings);
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to update profile picture');
-      console.error(error);
-      setLoading(false);
+      Alert.alert('Error', 'Failed to update settings');
     }
   };
 
-  const handleSettingChange = async (setting, value) => {
-    const updatedSettings = { ...settings, [setting]: value };
-    setSettings(updatedSettings);
-    await firebaseAuth.updateUserProfile({
-      ...profile,
-      settings: updatedSettings,
-    });
+  const handleImageUpload = async (uri) => {
+    try {
+      setImageLoading(true);
+      const user = firebaseAuth.getCurrentUser();
+      if (user) {
+        const imageRef = `profiles/${user.uid}/avatar.jpg`;
+        const downloadUrl = await firebaseStorage.uploadImage(uri, imageRef);
+        await firebaseDB.updateUserProfile(user.uid, { avatar: downloadUrl });
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to upload profile picture');
+    } finally {
+      setImageLoading(false);
+    }
   };
-
-  const renderSettingItem = (icon, title, value, onToggle) => (
-    <View style={styles.settingItem}>
-      <View style={styles.settingLeft}>
-        <View style={styles.settingIcon}>
-          {icon === 'notifications' && <Bell size={24} color="#666" />}
-          {icon === 'location-on' && <Phone size={24} color="#666" />}
-          {icon === 'fingerprint' && <Lock size={24} color="#666" />}
-        </View>
-        <Text style={styles.settingText}>{title}</Text>
-      </View>
-      <Switch
-        value={value}
-        onValueChange={onToggle}
-        trackColor={{ false: '#767577', true: '#81b0ff' }}
-        thumbColor={value ? '#f5dd4b' : '#f4f3f4'}
-      />
-    </View>
-  );
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color="#0000ff" />
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#2A9D8F" />
       </View>
     );
   }
@@ -182,48 +133,60 @@ const ProfileScreen = () => {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={handleImagePick} style={styles.avatarContainer}>
-          <Image
-            source={
-              profile.avatar
-                ? { uri: profile.avatar }
-                : require('../../assets/default-avatar.png')
-            }
-            style={styles.avatar}
-          />
-          <View style={styles.editIconContainer}>
-            <Gear size={20} color="#fff" />
-          </View>
+        <ProfilePicture
+          uri={profile.avatar}
+          onImageSelected={handleImageUpload}
+          loading={imageLoading}
+          size={120}
+        />
+        <TouchableOpacity
+          style={styles.editButton}
+          onPress={() => setEditMode(!editMode)}
+        >
+          <Text style={styles.editButtonText}>
+            {editMode ? 'Cancel Edit' : 'Edit Profile'}
+          </Text>
         </TouchableOpacity>
-        <Text style={styles.name}>{profile.name}</Text>
-        <Text style={styles.email}>{profile.email}</Text>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Settings</Text>
-        {renderSettingItem(
-          'notifications',
-          'Push Notifications',
-          settings.notificationsEnabled,
-          (value) => handleSettingChange('notificationsEnabled', value)
-        )}
-        {renderSettingItem(
-          'location-on',
-          'Location Services',
-          settings.locationEnabled,
-          (value) => handleSettingChange('locationEnabled', value)
-        )}
-        {renderSettingItem(
-          'fingerprint',
-          'Biometric Authentication',
-          settings.biometricEnabled,
-          (value) => handleSettingChange('biometricEnabled', value)
-        )}
-      </View>
+      {editMode ? (
+        <ProfileEditor
+          profile={profile}
+          onSave={handleProfileUpdate}
+          onCancel={() => setEditMode(false)}
+          loading={loading}
+        />
+      ) : (
+        <>
+          <View style={styles.profileInfo}>
+            <Text style={styles.name}>{profile.name}</Text>
+            <Text style={styles.email}>{profile.email}</Text>
+            <Text style={styles.phone}>{profile.phone}</Text>
+          </View>
 
-      <View style={styles.section}>
-        <EmergencyContactManager />
-      </View>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Medical Information</Text>
+            <View style={styles.medicalInfo}>
+              <Text style={styles.medicalLabel}>Blood Type:</Text>
+              <Text style={styles.medicalValue}>{profile.bloodType || 'Not specified'}</Text>
+              <Text style={styles.medicalLabel}>Allergies:</Text>
+              <Text style={styles.medicalValue}>{profile.allergies || 'None'}</Text>
+              <Text style={styles.medicalLabel}>Medications:</Text>
+              <Text style={styles.medicalValue}>{profile.medications || 'None'}</Text>
+            </View>
+          </View>
+
+          <SettingsManager
+            settings={settings}
+            onSettingChange={handleSettingsUpdate}
+          />
+
+          <EmergencyContactManager
+            contacts={emergencyContacts}
+            onContactsUpdate={setEmergencyContacts}
+          />
+        </>
+      )}
     </ScrollView>
   );
 };
@@ -233,84 +196,76 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   header: {
     alignItems: 'center',
     padding: 20,
-    backgroundColor: 'white',
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
   },
-  avatarContainer: {
-    position: 'relative',
+  editButton: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    backgroundColor: '#2A9D8F',
+    borderRadius: 20,
   },
-  avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+  editButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
-  editIconContainer: {
-    position: 'absolute',
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#2196F3',
-    borderRadius: 15,
-    padding: 5,
+  profileInfo: {
+    padding: 20,
+    backgroundColor: '#fff',
+    marginBottom: 8,
   },
   name: {
     fontSize: 24,
     fontWeight: 'bold',
-    marginTop: 10,
+    color: '#333',
+    marginBottom: 8,
   },
   email: {
     fontSize: 16,
     color: '#666',
-    marginTop: 5,
+    marginBottom: 4,
+  },
+  phone: {
+    fontSize: 16,
+    color: '#666',
   },
   section: {
+    marginBottom: 8,
     backgroundColor: '#fff',
-    marginTop: 16,
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: '#eee',
+    padding: 20,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
+    fontWeight: '700',
+    color: '#333',
+    marginBottom: 16,
   },
-  settingItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+  medicalInfo: {
+    backgroundColor: '#f8f8f8',
+    padding: 16,
+    borderRadius: 8,
   },
-  settingLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  settingIcon: {
-    marginRight: 10,
-  },
-  settingText: {
+  medicalLabel: {
     fontSize: 16,
-    marginLeft: 10,
+    fontWeight: '600',
+    color: '#333',
+    marginTop: 8,
   },
-  logoutButton: {
-    margin: 20,
-    backgroundColor: '#ff4444',
-    padding: 15,
-    borderRadius: 5,
-    alignItems: 'center',
-  },
-  logoutText: {
-    color: 'white',
+  medicalValue: {
     fontSize: 16,
-    fontWeight: 'bold',
-  },
-  centered: {
-    justifyContent: 'center',
-    alignItems: 'center',
+    color: '#666',
+    marginBottom: 8,
   },
 });
 
