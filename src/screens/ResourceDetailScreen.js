@@ -10,14 +10,17 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CaretLeft, Download, Share, BookOpen } from 'phosphor-react-native';
 
-// Mock data for resource details (replace with Firebase data later)
+// Mock data for resource details (replace with MongoDB data later)
 const RESOURCE_DETAILS = {
   emergency: {
+    _id: '507f1f77bcf86cd799439011',
     title: 'Emergency Procedures',
     color: '#E63946',
     icon: 'warning-outline',
+    slug: 'emergency',
     sections: [
       {
+        _id: '507f1f77bcf86cd799439101',
         title: 'In Case of Armed Robbery',
         content: [
           'Stay calm and do not resist',
@@ -26,8 +29,12 @@ const RESOURCE_DETAILS = {
           'Call emergency services once safe',
           'Report to local authorities',
         ],
+        order: 1,
+        createdAt: new Date('2023-01-01'),
+        updatedAt: new Date('2023-01-01')
       },
       {
+        _id: '507f1f77bcf86cd799439102',
         title: 'During Natural Disasters',
         content: [
           'Follow evacuation orders immediately',
@@ -36,15 +43,23 @@ const RESOURCE_DETAILS = {
           'Help others if safe to do so',
           'Document damage for insurance',
         ],
+        order: 2,
+        createdAt: new Date('2023-01-01'),
+        updatedAt: new Date('2023-01-01')
       },
     ],
+    createdAt: new Date('2023-01-01'),
+    updatedAt: new Date('2023-01-01')
   },
   firstaid: {
+    _id: '507f1f77bcf86cd799439012',
     title: 'First Aid Guide',
     color: '#2A9D8F',
     icon: 'medical-outline',
+    slug: 'firstaid',
     sections: [
       {
+        _id: '507f1f77bcf86cd799439201',
         title: 'Basic First Aid Steps',
         content: [
           'Check the scene for danger',
@@ -53,8 +68,12 @@ const RESOURCE_DETAILS = {
           'Control severe bleeding',
           'Treat for shock',
         ],
+        order: 1,
+        createdAt: new Date('2023-01-01'),
+        updatedAt: new Date('2023-01-01')
       },
       {
+        _id: '507f1f77bcf86cd799439202',
         title: 'Common Injuries',
         content: [
           'Clean wounds with clean water',
@@ -63,15 +82,23 @@ const RESOURCE_DETAILS = {
           'Apply cold to reduce swelling',
           'Seek medical attention if severe',
         ],
+        order: 2,
+        createdAt: new Date('2023-01-01'),
+        updatedAt: new Date('2023-01-01')
       },
     ],
+    createdAt: new Date('2023-01-01'),
+    updatedAt: new Date('2023-01-01')
   },
   security: {
+    _id: '507f1f77bcf86cd799439013',
     title: 'Security Tips',
     color: '#457B9D',
     icon: 'shield-checkmark-outline',
+    slug: 'security',
     sections: [
       {
+        _id: '507f1f77bcf86cd799439301',
         title: 'Personal Safety',
         content: [
           'Stay aware of surroundings',
@@ -80,8 +107,12 @@ const RESOURCE_DETAILS = {
           'Share location with trusted contacts',
           'Know emergency exits',
         ],
+        order: 1,
+        createdAt: new Date('2023-01-01'),
+        updatedAt: new Date('2023-01-01')
       },
       {
+        _id: '507f1f77bcf86cd799439302',
         title: 'Home Security',
         content: [
           'Install security systems',
@@ -90,35 +121,37 @@ const RESOURCE_DETAILS = {
           'Know your neighbors',
           'Have an emergency plan',
         ],
+        order: 2,
+        createdAt: new Date('2023-01-01'),
+        updatedAt: new Date('2023-01-01')
       },
     ],
+    createdAt: new Date('2023-01-01'),
+    updatedAt: new Date('2023-01-01')
   },
   contacts: {
+    _id: '507f1f77bcf86cd799439014',
     title: 'Emergency Contacts',
     color: '#E9C46A',
     icon: 'call-outline',
+    slug: 'contacts',
     sections: [
       {
-        title: 'National Emergency Numbers',
+        _id: '507f1f77bcf86cd799439401',
+        title: 'Emergency Numbers',
         content: [
           'Police: 112',
           'Fire Service: 112',
           'Ambulance: 112',
           'NEMA: 0800CALLNEMA',
-          'Anti-Kidnapping: 112',
         ],
-      },
-      {
-        title: 'Important Tips',
-        content: [
-          'Save these numbers on speed dial',
-          'Keep a written copy accessible',
-          'Teach children emergency numbers',
-          'Update contacts regularly',
-          'Test emergency numbers periodically',
-        ],
-      },
+        order: 1,
+        createdAt: new Date('2023-01-01'),
+        updatedAt: new Date('2023-01-01')
+      }
     ],
+    createdAt: new Date('2023-01-01'),
+    updatedAt: new Date('2023-01-01')
   },
 };
 
@@ -151,7 +184,7 @@ const ResourceDetailScreen = ({ route, navigation }) => {
 
         <View style={styles.content}>
           {resource.sections.map((section, index) => (
-            <View key={index} style={styles.section}>
+            <View key={section._id} style={styles.section}>
               <Text style={styles.sectionTitle}>{section.title}</Text>
               {section.content.map((item, itemIndex) => (
                 <View key={itemIndex} style={styles.listItem}>

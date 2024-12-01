@@ -12,39 +12,51 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Book, CaretRight, MagnifyingGlass } from 'phosphor-react-native';
 
-// Mock data for safety resources (replace with Firebase data later)
+// Mock data for safety resources (replace with MongoDB data later)
 const SAFETY_CATEGORIES = [
   {
-    id: 'emergency',
+    _id: '507f1f77bcf86cd799439011',
     title: 'Emergency Procedures',
     icon: 'warning-outline',
     color: '#E63946',
+    slug: 'emergency',
+    createdAt: new Date('2023-01-01'),
+    updatedAt: new Date('2023-01-01')
   },
   {
-    id: 'firstaid',
+    _id: '507f1f77bcf86cd799439012',
     title: 'First Aid Guide',
     icon: 'medical-outline',
     color: '#2A9D8F',
+    slug: 'firstaid',
+    createdAt: new Date('2023-01-01'),
+    updatedAt: new Date('2023-01-01')
   },
   {
-    id: 'security',
+    _id: '507f1f77bcf86cd799439013',
     title: 'Security Tips',
     icon: 'shield-checkmark-outline',
     color: '#457B9D',
+    slug: 'security',
+    createdAt: new Date('2023-01-01'),
+    updatedAt: new Date('2023-01-01')
   },
   {
-    id: 'contacts',
+    _id: '507f1f77bcf86cd799439014',
     title: 'Emergency Contacts',
     icon: 'call-outline',
     color: '#E9C46A',
+    slug: 'contacts',
+    createdAt: new Date('2023-01-01'),
+    updatedAt: new Date('2023-01-01')
   },
 ];
 
 const EMERGENCY_NUMBERS = [
-  { id: '1', name: 'Police Emergency', number: '112' },
-  { id: '2', name: 'Fire Service', number: '112' },
-  { id: '3', name: 'Ambulance', number: '112' },
-  { id: '4', name: 'NEMA', number: '0800CALLNEMA' },
+  { _id: '507f1f77bcf86cd799439021', name: 'Police Emergency', number: '112', active: true },
+  { _id: '507f1f77bcf86cd799439022', name: 'Fire Service', number: '112', active: true },
+  { _id: '507f1f77bcf86cd799439023', name: 'Ambulance', number: '112', active: true },
+  { _id: '507f1f77bcf86cd799439024', name: 'NEMA', number: '0800CALLNEMA', active: true },
 ];
 
 const ResourceCard = ({ title, icon, color, onPress }) => (
@@ -109,11 +121,11 @@ const ResourcesScreen = ({ navigation }) => {
           <View style={styles.resourcesGrid}>
             {SAFETY_CATEGORIES.map((category) => (
               <ResourceCard
-                key={category.id}
+                key={category._id}
                 title={category.title}
                 icon={category.icon}
                 color={category.color}
-                onPress={() => handleResourcePress(category.id)}
+                onPress={() => handleResourcePress(category.slug)}
               />
             ))}
           </View>
@@ -124,7 +136,7 @@ const ResourcesScreen = ({ navigation }) => {
           <View style={styles.contactsContainer}>
             {EMERGENCY_NUMBERS.map((contact) => (
               <EmergencyContact
-                key={contact.id}
+                key={contact._id}
                 name={contact.name}
                 number={contact.number}
               />
