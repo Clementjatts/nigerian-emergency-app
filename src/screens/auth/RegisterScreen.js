@@ -13,7 +13,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { User, Envelope, Lock, Eye, EyeSlash, Phone } from 'phosphor-react-native';
-import { firebaseAuth } from '../../utils/firebase';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL } from '../../config/constants';
 
 const RegisterScreen = ({ navigation }) => {
   const [formData, setFormData] = useState({
@@ -38,30 +40,25 @@ const RegisterScreen = ({ navigation }) => {
       return;
     }
 
-    if (formData.password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters long');
-      return;
-    }
-
     try {
       setLoading(true);
-      const userData = {
-        fullName: formData.fullName,
+      const response = await axios.post(`${API_URL}/auth/register`, {
+        name: formData.fullName,
+        email: formData.email,
         phone: formData.phone,
-        createdAt: new Date().toISOString(),
-      };
+        password: formData.password,
+      });
 
-      await firebaseAuth.registerUser(formData.email, formData.password, userData);
-      // Navigation will be handled by the AuthContext listener
+      const { token } = response.data;
+      await AsyncStorage.setItem('token', token);
+
+      // Navigate to the main app
+      navigation.replace('Main');
     } catch (error) {
       console.error('Registration error:', error);
       Alert.alert(
         'Registration Failed',
-        error.code === 'auth/email-already-in-use'
-          ? 'An account with this email already exists'
-          : error.code === 'auth/invalid-email'
-          ? 'Please enter a valid email address'
-          : 'An error occurred during registration. Please try again.'
+        error.response?.data?.message || 'An error occurred during registration. Please try again.'
       );
     } finally {
       setLoading(false);

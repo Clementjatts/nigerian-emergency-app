@@ -13,7 +13,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Envelope, Lock, Eye, EyeSlash } from 'phosphor-react-native';
-import { firebaseAuth } from '../../utils/firebase';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL } from '../../config/constants';
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
@@ -29,17 +31,21 @@ const LoginScreen = ({ navigation }) => {
 
     try {
       setLoading(true);
-      await firebaseAuth.loginUser(email, password);
-      // Navigation will be handled by the AuthContext listener
+      const response = await axios.post(`${API_URL}/auth/login`, {
+        email,
+        password,
+      });
+
+      const { token } = response.data;
+      await AsyncStorage.setItem('token', token);
+      
+      // Navigate to the main app
+      navigation.replace('Main');
     } catch (error) {
       console.error('Login error:', error);
       Alert.alert(
         'Login Failed',
-        error.code === 'auth/user-not-found'
-          ? 'No account found with this email'
-          : error.code === 'auth/wrong-password'
-          ? 'Invalid password'
-          : 'An error occurred during login. Please try again.'
+        error.response?.data?.message || 'An error occurred during login. Please try again.'
       );
     } finally {
       setLoading(false);
@@ -54,7 +60,7 @@ const LoginScreen = ({ navigation }) => {
 
     try {
       setLoading(true);
-      await firebaseAuth.resetPassword(email);
+      await axios.post(`${API_URL}/auth/forgot-password`, { email });
       Alert.alert(
         'Password Reset',
         'If an account exists with this email, you will receive password reset instructions.'

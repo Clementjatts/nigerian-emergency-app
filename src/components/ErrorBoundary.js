@@ -1,8 +1,8 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import * as Updates from 'expo-updates';
-import * as Sentry from '@sentry/react-native';
-import { captureError } from '../utils/errorTracking';
+import React from "react";
+import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import * as Updates from "expo-updates";
+import * as Sentry from "@sentry/react-native";
+import { captureError } from "../utils/errorTracking";
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -17,9 +17,9 @@ class ErrorBoundary extends React.Component {
   componentDidCatch(error, errorInfo) {
     this.setState({
       error: error,
-      errorInfo: errorInfo
+      errorInfo: errorInfo,
     });
-    
+
     // Log error to Sentry
     this.logError(error, errorInfo);
   }
@@ -31,16 +31,16 @@ class ErrorBoundary extends React.Component {
           componentStack: errorInfo?.componentStack,
           name: error?.name,
           message: error?.message,
-          ...this.props.extraErrorData
-        }
+          ...this.props.extraErrorData,
+        },
       });
 
       if (__DEV__) {
-        console.error('Error:', error);
-        console.error('Error Info:', errorInfo);
+        console.error("Error:", error);
+        console.error("Error Info:", errorInfo);
       }
     } catch (loggingError) {
-      console.error('Failed to log error:', loggingError);
+      console.error("Failed to log error:", loggingError);
       // Attempt to log the logging failure
       Sentry.captureException(loggingError);
     }
@@ -50,8 +50,8 @@ class ErrorBoundary extends React.Component {
     try {
       await Updates.reloadAsync();
     } catch (error) {
-      console.error('Failed to reload app:', error);
-      captureError(error, { context: 'ErrorBoundary.handleRestart' });
+      console.error("Failed to reload app:", error);
+      captureError(error, { context: "ErrorBoundary.handleRestart" });
     }
   };
 
@@ -63,10 +63,7 @@ class ErrorBoundary extends React.Component {
           <Text style={styles.message}>
             We apologize for the inconvenience. Please try restarting the app.
           </Text>
-          <TouchableOpacity
-            style={styles.button}
-            onPress={this.handleRestart}
-          >
+          <TouchableOpacity style={styles.button} onPress={this.handleRestart}>
             <Text style={styles.buttonText}>Restart App</Text>
           </TouchableOpacity>
           {__DEV__ && (
@@ -90,45 +87,45 @@ class ErrorBoundary extends React.Component {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
   },
   title: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     marginBottom: 10,
-    color: '#E63946',
+    color: "#E63946",
   },
   message: {
     fontSize: 16,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 20,
-    color: '#333',
+    color: "#333",
   },
   button: {
-    backgroundColor: '#2A9D8F',
+    backgroundColor: "#2A9D8F",
     padding: 15,
     borderRadius: 8,
     marginTop: 20,
   },
   buttonText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   debugInfo: {
     marginTop: 20,
     padding: 10,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: "#f8f9fa",
     borderRadius: 5,
   },
   debugText: {
     fontSize: 12,
-    color: '#dc3545',
+    color: "#dc3545",
     marginVertical: 5,
-  }
+  },
 });
 
 export default ErrorBoundary;

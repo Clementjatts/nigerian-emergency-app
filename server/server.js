@@ -11,6 +11,10 @@ const chatRoutes = require('./routes/chatRoutes');
 const alertRoutes = require('./routes/alertRoutes');
 const resourceRoutes = require('./routes/resourceRoutes');
 const eventRoutes = require('./routes/eventRoutes');
+const safetyZoneRoutes = require('./routes/safetyZoneRoutes');
+const emergencyFacilityRoutes = require('./routes/emergencyFacilityRoutes');
+const communityRoutes = require('./routes/communityRoutes');
+const analyticsRoutes = require('./routes/analyticsRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -44,6 +48,10 @@ app.use('/api/chats', chatRoutes);
 app.use('/api/alerts', alertRoutes);
 app.use('/api/resources', resourceRoutes);
 app.use('/api/events', eventRoutes);
+app.use('/api/safety-zones', safetyZoneRoutes);
+app.use('/api/emergency-facilities', emergencyFacilityRoutes);
+app.use('/api/communities', communityRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

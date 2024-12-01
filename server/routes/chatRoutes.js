@@ -3,15 +3,18 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const Chat = require('../models/Chat');
 const Message = require('../models/Message');
-const upload = require('../middleware/upload');
+const socketService = require('../services/socketService');
 
-// Create a new chat room
+// Create a new chat
 router.post('/', auth, async (req, res) => {
   try {
     const chat = new Chat({
       ...req.body,
-      createdBy: req.user._id,
-      members: [...(req.body.members || []), req.user._id]
+      participants: [{
+        user: req.user._id,
+        role: 'admin',
+        joinedAt: new Date()
+      }]
     });
     await chat.save();
     res.status(201).json(chat);
@@ -20,60 +23,96 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
-// Get user's chat rooms
+// Get user's chats
 router.get('/', auth, async (req, res) => {
   try {
     const chats = await Chat.find({
-      members: req.user._id
+      'participants.user': req.user._id,
+      status: { $ne: 'deleted' }
     })
-    .sort({ lastMessageTime: -1 })
-    .populate('members', 'name avatar')
-    .populate('createdBy', 'name');
+    .populate('participants.user', 'name email avatar')
+    .populate('lastMessage.sender', 'name')
+    .sort({ updatedAt: -1 });
     res.json(chats);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Get chat messages
-router.get('/:chatId/messages', auth, async (req, res) => {
+// Get chat by ID
+router.get('/:id', auth, async (req, res) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
-    const messages = await Message.find({
-      chatId: req.params.chatId
+    const chat = await Chat.findOne({
+      _id: req.params.id,
+      'participants.user': req.user._id
     })
-    .sort({ createdAt: -1 })
-    .skip((page - 1) * limit)
-    .limit(parseInt(limit))
-    .populate('sender', 'name avatar');
-    res.json(messages);
+    .populate('participants.user', 'name email avatar')
+    .populate('pinnedMessages');
+    
+    if (!chat) {
+      return res.status(404).json({ error: 'Chat not found' });
+    }
+    res.json(chat);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get chat messages
+router.get('/:id/messages', auth, async (req, res) => {
+  try {
+    const { limit = 50, before } = req.query;
+    const query = {
+      chatId: req.params.id,
+      'deletedFor.user': { $ne: req.user._id }
+    };
+    
+    if (before) {
+      query.createdAt = { $lt: new Date(before) };
+    }
+
+    const messages = await Message.find(query)
+      .populate('sender', 'name email avatar')
+      .populate('replyTo')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+
+    res.json(messages.reverse());
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
 // Send a message
-router.post('/:chatId/messages', auth, async (req, res) => {
+router.post('/:id/messages', auth, async (req, res) => {
   try {
+    const chat = await Chat.findOne({
+      _id: req.params.id,
+      'participants.user': req.user._id
+    });
+
+    if (!chat) {
+      return res.status(404).json({ error: 'Chat not found' });
+    }
+
     const message = new Message({
-      ...req.body,
-      chatId: req.params.chatId,
+      chatId: chat._id,
       sender: req.user._id,
-      readBy: [req.user._id]
+      ...req.body
     });
+
     await message.save();
+    await chat.updateLastMessage(message);
 
-    // Update chat's last message
-    await Chat.findByIdAndUpdate(req.params.chatId, {
-      lastMessage: req.body.content,
-      lastMessageTime: new Date()
-    });
-
-    // Emit message through Socket.IO
-    req.app.io.to(req.params.chatId).emit('new_message', {
-      ...message.toJSON(),
-      sender: { _id: req.user._id, name: req.user.name, avatar: req.user.avatar }
-    });
+    // Notify other participants
+    chat.participants
+      .filter(p => !p.user.equals(req.user._id))
+      .forEach(participant => {
+        socketService.emitToUser(participant.user, 'new_message', {
+          chatId: chat._id,
+          message
+        });
+      });
 
     res.status(201).json(message);
   } catch (error) {
@@ -81,61 +120,209 @@ router.post('/:chatId/messages', auth, async (req, res) => {
   }
 });
 
-// Upload attachment
-router.post('/upload', auth, upload.single('file'), async (req, res) => {
+// Update message status (read/delivered)
+router.patch('/:chatId/messages/:messageId/status', auth, async (req, res) => {
   try {
-    if (!req.file) {
-      throw new Error('No file uploaded');
-    }
-    res.json({
-      url: req.file.path,
-      filename: req.file.filename,
-      type: req.file.mimetype
+    const message = await Message.findOne({
+      _id: req.params.messageId,
+      chatId: req.params.chatId
     });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
 
-// Mark message as read
-router.put('/messages/:messageId/read', auth, async (req, res) => {
-  try {
-    const message = await Message.findByIdAndUpdate(
-      req.params.messageId,
-      { $addToSet: { readBy: req.user._id } },
-      { new: true }
-    );
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    if (req.body.status === 'delivered') {
+      await message.markAsDelivered(req.user._id);
+    } else if (req.body.status === 'read') {
+      await message.markAsRead(req.user._id);
+    }
+
     res.json(message);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
 });
 
-// Delete message
-router.delete('/messages/:messageId', auth, async (req, res) => {
+// Add reaction to message
+router.post('/:chatId/messages/:messageId/reactions', auth, async (req, res) => {
   try {
     const message = await Message.findOne({
       _id: req.params.messageId,
+      chatId: req.params.chatId
+    });
+
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    await message.addReaction(req.user._id, req.body.reaction);
+    res.json(message);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Edit message
+router.patch('/:chatId/messages/:messageId', auth, async (req, res) => {
+  try {
+    const message = await Message.findOne({
+      _id: req.params.messageId,
+      chatId: req.params.chatId,
       sender: req.user._id
     });
+
     if (!message) {
-      return res.status(404).json({ error: 'Message not found or unauthorized' });
+      return res.status(404).json({ error: 'Message not found' });
     }
-    await message.remove();
-    res.json({ message: 'Message deleted' });
+
+    await message.edit(req.body.content);
+    res.json(message);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Delete message for user
+router.delete('/:chatId/messages/:messageId', auth, async (req, res) => {
+  try {
+    const message = await Message.findOne({
+      _id: req.params.messageId,
+      chatId: req.params.chatId
+    });
+
+    if (!message) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    await message.deleteForUser(req.user._id);
+    res.json({ message: 'Message deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Leave chat room
-router.post('/:chatId/leave', auth, async (req, res) => {
+// Update chat settings
+router.patch('/:id/settings', auth, async (req, res) => {
   try {
-    const chat = await Chat.findByIdAndUpdate(
-      req.params.chatId,
-      { $pull: { members: req.user._id } },
-      { new: true }
-    );
+    const chat = await Chat.findOne({
+      _id: req.params.id,
+      'participants.user': req.user._id
+    });
+
+    if (!chat) {
+      return res.status(404).json({ error: 'Chat not found' });
+    }
+
+    Object.assign(chat.settings, req.body);
+    await chat.save();
+    res.json(chat);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Pin/unpin message
+router.post('/:id/pin-message', auth, async (req, res) => {
+  try {
+    const chat = await Chat.findOne({
+      _id: req.params.id,
+      'participants.user': req.user._id
+    });
+
+    if (!chat) {
+      return res.status(404).json({ error: 'Chat not found' });
+    }
+
+    if (req.body.pin) {
+      await chat.pinMessage(req.body.messageId);
+    } else {
+      await chat.unpinMessage(req.body.messageId);
+    }
+
+    res.json(chat);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Update emergency status
+router.patch('/:id/emergency', auth, async (req, res) => {
+  try {
+    const chat = await Chat.findOne({
+      _id: req.params.id,
+      'participants.user': req.user._id
+    });
+
+    if (!chat) {
+      return res.status(404).json({ error: 'Chat not found' });
+    }
+
+    await chat.updateEmergencyStatus(req.body);
+    
+    // Notify all participants about emergency status change
+    chat.participants.forEach(participant => {
+      socketService.emitToUser(participant.user, 'emergency_status_changed', {
+        chatId: chat._id,
+        emergencyInfo: chat.emergencyInfo
+      });
+    });
+
+    res.json(chat);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Assign emergency responder
+router.post('/:id/assign-responder', auth, async (req, res) => {
+  try {
+    const chat = await Chat.findOne({
+      _id: req.params.id,
+      'participants.user': req.user._id
+    });
+
+    if (!chat) {
+      return res.status(404).json({ error: 'Chat not found' });
+    }
+
+    await chat.assignResponder(req.body.userId);
+    
+    // Notify the assigned responder
+    socketService.emitToUser(req.body.userId, 'emergency_assignment', {
+      chatId: chat._id,
+      emergencyInfo: chat.emergencyInfo
+    });
+
+    res.json(chat);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Update responder status
+router.patch('/:id/responder-status', auth, async (req, res) => {
+  try {
+    const chat = await Chat.findOne({
+      _id: req.params.id,
+      'emergencyInfo.responders.user': req.user._id
+    });
+
+    if (!chat) {
+      return res.status(404).json({ error: 'Chat not found' });
+    }
+
+    await chat.updateResponderStatus(req.user._id, req.body.status);
+    
+    // Notify all participants about responder status change
+    chat.participants.forEach(participant => {
+      socketService.emitToUser(participant.user, 'responder_status_changed', {
+        chatId: chat._id,
+        responderId: req.user._id,
+        status: req.body.status
+      });
+    });
+
     res.json(chat);
   } catch (error) {
     res.status(400).json({ error: error.message });

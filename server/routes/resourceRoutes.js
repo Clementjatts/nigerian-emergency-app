@@ -2,14 +2,17 @@ const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
 const Resource = require('../models/Resource');
-const upload = require('../middleware/upload');
+const socketService = require('../services/socketService');
 
 // Create a new resource
 router.post('/', auth, async (req, res) => {
   try {
     const resource = new Resource({
       ...req.body,
-      createdBy: req.user._id
+      ownership: {
+        owner: req.user._id,
+        ...req.body.ownership
+      }
     });
     await resource.save();
     res.status(201).json(resource);
@@ -18,23 +21,42 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
-// Get resources by category
-router.get('/', auth, async (req, res) => {
+// Get all resources with filtering
+router.get('/', async (req, res) => {
   try {
-    const { category, page = 1, limit = 20 } = req.query;
-    const query = category ? { category } : {};
-    
+    const {
+      type,
+      category,
+      status,
+      condition,
+      available,
+      page = 1,
+      limit = 10,
+      search
+    } = req.query;
+
+    const query = {};
+    if (type) query.type = type;
+    if (category) query.category = category;
+    if (status) query['status.current'] = status;
+    if (condition) query['status.condition'] = condition;
+    if (available === 'true') query['status.current'] = 'available';
+    if (search) {
+      query.$text = { $search: search };
+    }
+
     const resources = await Resource.find(query)
-      .sort('-createdAt')
+      .populate('ownership.owner', 'name email')
       .skip((page - 1) * limit)
       .limit(parseInt(limit))
-      .populate('createdBy', 'name');
-    
+      .sort({ createdAt: -1 });
+
     const total = await Resource.countDocuments(query);
-    
+
     res.json({
       resources,
-      totalPages: Math.ceil(total / limit),
+      total,
+      pages: Math.ceil(total / limit),
       currentPage: page
     });
   } catch (error) {
@@ -42,113 +64,224 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
-// Get user's resources
-router.get('/user', auth, async (req, res) => {
+// Find nearby resources
+router.get('/nearby', async (req, res) => {
   try {
-    const resources = await Resource.find({
-      createdBy: req.user._id
-    })
-    .sort('-createdAt');
-    res.json(resources);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Upload resource attachment
-router.post('/upload', auth, upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      throw new Error('No file uploaded');
-    }
-    res.json({
-      url: req.file.path,
-      filename: req.file.filename,
-      type: req.file.mimetype
-    });
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-
-// Like resource
-router.post('/:resourceId/like', auth, async (req, res) => {
-  try {
-    const resource = await Resource.findByIdAndUpdate(
-      req.params.resourceId,
-      { $addToSet: { likes: req.user._id } },
-      { new: true }
-    );
-    res.json(resource);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-
-// Unlike resource
-router.post('/:resourceId/unlike', auth, async (req, res) => {
-  try {
-    const resource = await Resource.findByIdAndUpdate(
-      req.params.resourceId,
-      { $pull: { likes: req.user._id } },
-      { new: true }
-    );
-    res.json(resource);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-
-// Increment share count
-router.post('/:resourceId/share', auth, async (req, res) => {
-  try {
-    const resource = await Resource.findByIdAndUpdate(
-      req.params.resourceId,
-      { $inc: { shares: 1 } },
-      { new: true }
-    );
-    res.json(resource);
-  } catch (error) {
-    res.status(400).json({ error: error.message });
-  }
-});
-
-// Search resources
-router.get('/search', auth, async (req, res) => {
-  try {
-    const { query, tags } = req.query;
-    const searchQuery = {};
-
-    if (query) {
-      searchQuery.$or = [
-        { title: { $regex: query, $options: 'i' } },
-        { description: { $regex: query, $options: 'i' } },
-        { content: { $regex: query, $options: 'i' } }
-      ];
-    }
-
-    if (tags) {
-      searchQuery.tags = { $in: tags.split(',') };
-    }
-
-    const resources = await Resource.find(searchQuery)
-      .sort('-createdAt')
-      .populate('createdBy', 'name');
+    const { longitude, latitude, radius = 5000, type, category } = req.query;
     
+    const query = {
+      location: {
+        $near: {
+          $geometry: {
+            type: 'Point',
+            coordinates: [parseFloat(longitude), parseFloat(latitude)]
+          },
+          $maxDistance: parseInt(radius)
+        }
+      }
+    };
+
+    if (type) query.type = type;
+    if (category) query.category = category;
+
+    const resources = await Resource.find(query)
+      .populate('ownership.owner', 'name email');
+
     res.json(resources);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Update resource
-router.patch('/:resourceId', auth, async (req, res) => {
+// Get resources due for maintenance
+router.get('/maintenance-due', auth, async (req, res) => {
+  try {
+    const resources = await Resource.findDueMaintenance()
+      .populate('ownership.owner', 'name email');
+    res.json(resources);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get resource by ID
+router.get('/:id', async (req, res) => {
+  try {
+    const resource = await Resource.findById(req.params.id)
+      .populate('ownership.owner', 'name email')
+      .populate('usage.logs.user', 'name email')
+      .populate('maintenance.logs.performedBy', 'name email');
+
+    if (!resource) {
+      return res.status(404).json({ error: 'Resource not found' });
+    }
+
+    res.json(resource);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Start resource usage
+router.post('/:id/usage/start', auth, async (req, res) => {
+  try {
+    const resource = await Resource.findById(req.params.id);
+    
+    if (!resource) {
+      return res.status(404).json({ error: 'Resource not found' });
+    }
+
+    if (resource.status.current !== 'available') {
+      return res.status(400).json({ error: 'Resource is not available' });
+    }
+
+    const usage = await resource.startUsage(req.user._id, req.body.purpose);
+    
+    // Notify resource owner
+    socketService.emitToUser(resource.ownership.owner, 'resource_usage_started', {
+      resourceId: resource._id,
+      usage
+    });
+
+    res.json(resource);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// End resource usage
+router.post('/:id/usage/:usageId/end', auth, async (req, res) => {
+  try {
+    const resource = await Resource.findById(req.params.id);
+    
+    if (!resource) {
+      return res.status(404).json({ error: 'Resource not found' });
+    }
+
+    await resource.endUsage(req.params.usageId);
+    
+    // Notify resource owner
+    socketService.emitToUser(resource.ownership.owner, 'resource_usage_ended', {
+      resourceId: resource._id,
+      usageId: req.params.usageId
+    });
+
+    res.json(resource);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Log maintenance
+router.post('/:id/maintenance', auth, async (req, res) => {
+  try {
+    const resource = await Resource.findById(req.params.id);
+    
+    if (!resource) {
+      return res.status(404).json({ error: 'Resource not found' });
+    }
+
+    await resource.logMaintenance({
+      ...req.body,
+      performedBy: req.user._id
+    });
+
+    // Notify resource owner
+    socketService.emitToUser(resource.ownership.owner, 'maintenance_logged', {
+      resourceId: resource._id,
+      maintenance: resource.maintenance.logs[resource.maintenance.logs.length - 1]
+    });
+
+    res.json(resource);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Schedule inspection
+router.post('/:id/schedule-inspection', auth, async (req, res) => {
+  try {
+    const resource = await Resource.findById(req.params.id);
+    
+    if (!resource) {
+      return res.status(404).json({ error: 'Resource not found' });
+    }
+
+    await resource.scheduleInspection(new Date(req.body.date));
+    res.json(resource);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Update resource availability schedule
+router.patch('/:id/availability', auth, async (req, res) => {
+  try {
+    const resource = await Resource.findById(req.params.id);
+    
+    if (!resource) {
+      return res.status(404).json({ error: 'Resource not found' });
+    }
+
+    await resource.updateAvailability(req.body.schedule);
+    res.json(resource);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Update resource status
+router.patch('/:id/status', auth, async (req, res) => {
+  try {
+    const resource = await Resource.findById(req.params.id);
+    
+    if (!resource) {
+      return res.status(404).json({ error: 'Resource not found' });
+    }
+
+    resource.status.current = req.body.status;
+    if (req.body.condition) {
+      resource.status.condition = req.body.condition;
+    }
+    await resource.save();
+
+    // Notify resource owner
+    socketService.emitToUser(resource.ownership.owner, 'resource_status_changed', {
+      resourceId: resource._id,
+      status: resource.status
+    });
+
+    res.json(resource);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Add certification
+router.post('/:id/certifications', auth, async (req, res) => {
+  try {
+    const resource = await Resource.findById(req.params.id);
+    
+    if (!resource) {
+      return res.status(404).json({ error: 'Resource not found' });
+    }
+
+    resource.certifications.push(req.body);
+    await resource.save();
+    res.json(resource);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Update resource details
+router.put('/:id', auth, async (req, res) => {
   try {
     const resource = await Resource.findOne({
-      _id: req.params.resourceId,
-      createdBy: req.user._id
+      _id: req.params.id,
+      'ownership.owner': req.user._id
     });
-
+    
     if (!resource) {
       return res.status(404).json({ error: 'Resource not found or unauthorized' });
     }
@@ -162,18 +295,17 @@ router.patch('/:resourceId', auth, async (req, res) => {
 });
 
 // Delete resource
-router.delete('/:resourceId', auth, async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
   try {
-    const resource = await Resource.findOne({
-      _id: req.params.resourceId,
-      createdBy: req.user._id
+    const resource = await Resource.findOneAndDelete({
+      _id: req.params.id,
+      'ownership.owner': req.user._id
     });
-
+    
     if (!resource) {
       return res.status(404).json({ error: 'Resource not found or unauthorized' });
     }
 
-    await resource.remove();
     res.json({ message: 'Resource deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: error.message });
