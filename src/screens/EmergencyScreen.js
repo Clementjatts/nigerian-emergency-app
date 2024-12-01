@@ -2,19 +2,18 @@ import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
-  Text,
-  TouchableOpacity,
-  Alert,
-  ActivityIndicator,
-  Vibration,
   ScrollView,
+  Vibration,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Phone, FirstAid, Siren, Police, MapPin } from 'phosphor-react-native';
+import { useTranslation } from 'react-i18next';
 import EmergencyButton from '../components/EmergencyButton';
 import EmergencyStatus from '../components/EmergencyStatus';
 import EmergencyConfirmation from '../components/EmergencyConfirmation';
 import EmergencyQuickDial from '../components/EmergencyQuickDial';
+import { LoadingView, ErrorView } from '../utils/LoadingState';
+import notificationService from '../services/notificationService';
+import accessibilityService from '../services/accessibilityService';
 import { api } from '../services/api';
 
 const EMERGENCY_TYPES = {
@@ -45,38 +44,39 @@ const EMERGENCY_TYPES = {
 };
 
 const EmergencyScreen = ({ route, navigation }) => {
+  const { t } = useTranslation();
   const [location, setLocation] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [alertSent, setAlertSent] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [emergencyStatus, setEmergencyStatus] = useState(null);
   const [responderInfo, setResponderInfo] = useState(null);
   const [estimatedTime, setEstimatedTime] = useState(null);
 
   const emergencyType = route.params?.emergencyType || 'police';
-  const emergency = EMERGENCY_TYPES[emergencyType];
+  const colors = accessibilityService.getColors();
 
   useEffect(() => {
     (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setErrorMsg('Permission to access location was denied');
-        return;
-      }
-
       try {
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setErrorMsg(t('emergency.locationPermissionDenied'));
+          return;
+        }
+
         let location = await Location.getCurrentPositionAsync({});
         setLocation(location);
       } catch (error) {
-        setErrorMsg('Error getting location');
+        setErrorMsg(t('emergency.locationError'));
+        console.error('Error getting location:', error);
       }
     })();
-  }, []);
+  }, [t]);
 
-  const handleEmergencyPress = async () => {
+  const handleEmergencyPress = () => {
     setShowConfirmation(true);
+    accessibilityService.announceForAccessibility(t('emergency.confirmMessage'));
   };
 
   const handleConfirmEmergency = async () => {
@@ -85,27 +85,29 @@ const EmergencyScreen = ({ route, navigation }) => {
     setEmergencyStatus('PENDING');
 
     try {
-      // Simulate API call for demo purposes
-      const response = await new Promise((resolve) => {
-        setTimeout(() => {
-          resolve({
-            status: 'ACCEPTED',
-            responder: {
-              unit: 'Emergency Response Unit 7',
-              distance: 2.5,
-            },
-            estimatedTime: 8,
-          });
-        }, 3000);
+      const response = await api.createEmergency({
+        type: emergencyType,
+        location: {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+        },
       });
 
       setEmergencyStatus(response.status);
       setResponderInfo(response.responder);
       setEstimatedTime(response.estimatedTime);
-      setAlertSent(true);
+      
+      // Schedule notification
+      await notificationService.scheduleEmergencyUpdate(
+        response.status,
+        response.responder
+      );
+      
       Vibration.vibrate();
+      accessibilityService.announceForAccessibility(t('emergency.help'));
     } catch (error) {
       setEmergencyStatus('ERROR');
+      setErrorMsg(t('emergency.error'));
       console.error('Error sending emergency alert:', error);
     } finally {
       setIsLoading(false);
@@ -116,9 +118,23 @@ const EmergencyScreen = ({ route, navigation }) => {
     setShowConfirmation(false);
   };
 
+  if (errorMsg) {
+    return (
+      <ErrorView
+        message={errorMsg}
+        onRetry={() => {
+          setErrorMsg(null);
+          setEmergencyStatus(null);
+        }}
+      />
+    );
+  }
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView style={styles.scrollContainer}>
+        {isLoading && <LoadingView message={t('emergency.sending')} />}
+
         {emergencyStatus && (
           <EmergencyStatus
             status={emergencyStatus}
@@ -129,7 +145,12 @@ const EmergencyScreen = ({ route, navigation }) => {
 
         <View style={styles.buttonContainer}>
           <EmergencyButton
-            type={EMERGENCY_TYPES[emergencyType]}
+            type={{
+              title: t(`emergency.${emergencyType}`),
+              icon: EMERGENCY_TYPES[emergencyType].icon,
+              color: colors.accent,
+              number: EMERGENCY_TYPES[emergencyType].number,
+            }}
             onPress={handleEmergencyPress}
             isLoading={isLoading}
           />
@@ -139,16 +160,16 @@ const EmergencyScreen = ({ route, navigation }) => {
           contacts={[
             {
               id: '1',
-              name: 'National Emergency',
+              name: t('emergency.nationalEmergency'),
               number: '112',
-              type: 'Emergency Services',
+              type: t('emergency.emergencyServices'),
               isFavorite: true,
             },
             {
               id: '2',
-              name: 'Local Police',
+              name: t('emergency.localPolice'),
               number: '199',
-              type: 'Police',
+              type: t('emergency.police'),
               isFavorite: false,
             },
           ]}
@@ -159,7 +180,7 @@ const EmergencyScreen = ({ route, navigation }) => {
           visible={showConfirmation}
           onConfirm={handleConfirmEmergency}
           onCancel={handleCancelEmergency}
-          emergencyType={EMERGENCY_TYPES[emergencyType].title}
+          emergencyType={t(`emergency.${emergencyType}`)}
           loading={isLoading}
         />
       </ScrollView>
@@ -170,11 +191,9 @@ const EmergencyScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
   },
   scrollContainer: {
     flexGrow: 1,
-    padding: 20,
   },
   buttonContainer: {
     alignItems: 'center',

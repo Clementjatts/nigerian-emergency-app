@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import EmergencyFacilityFinder from '../screens/EmergencyFacilityFinder';
 import OfflineMapViewer from '../screens/OfflineMapViewer';
 import LocationSharing from '../screens/LocationSharing';
+import SafetyZonesScreen from '../screens/SafetyZonesScreen';
 
 const Stack = createStackNavigator();
 
@@ -50,6 +51,13 @@ const EmergencyNavigator = () => {
         component={LocationSharing}
         options={{
           title: 'Share Location',
+        }}
+      />
+      <Stack.Screen
+        name="SafetyZones"
+        component={SafetyZonesScreen}
+        options={{
+          title: 'Safety Zones',
         }}
       />
     </Stack.Navigator>

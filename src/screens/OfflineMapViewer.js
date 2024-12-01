@@ -15,6 +15,8 @@ import MapView, { Marker, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
 import mapTileManager from '../services/mapTileManager';
 import offlineRoutingService from '../services/offlineRoutingService';
+import EmergencyLocationService from '../services/emergencyLocationService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNetInfo } from '@react-native-community/netinfo';
 
 const OfflineMapViewer = () => {
@@ -63,13 +65,27 @@ const OfflineMapViewer = () => {
 
     try {
       setDownloading(true);
-      await mapTileManager.downloadRegion(
-        currentLocation.latitude,
-        currentLocation.longitude,
-        5 // 5km radius
-      );
+      const radius = 10000; // Increased radius to 10km
+      const zoomLevels = [12, 13, 14, 15, 16]; // Multiple zoom levels for better detail
+      
+      for (const zoom of zoomLevels) {
+        await mapTileManager.downloadRegion(
+          currentLocation.latitude,
+          currentLocation.longitude,
+          radius,
+          zoom
+        );
+        setDownloadProgress((prev) => prev + (100 / zoomLevels.length));
+      }
+      
+      const facilities = await EmergencyLocationService.findNearbyFacilities('all');
+      await AsyncStorage.setItem('CACHED_FACILITIES', JSON.stringify({
+        timestamp: Date.now(),
+        data: facilities
+      }));
+      
       setHasOfflineData(true);
-      Alert.alert('Success', 'Offline map data downloaded successfully');
+      Alert.alert('Success', 'Offline map data and facilities downloaded successfully');
     } catch (error) {
       Alert.alert('Error', 'Failed to download offline map data');
     } finally {

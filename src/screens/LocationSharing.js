@@ -14,6 +14,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Contacts from 'expo-contacts';
 import EmergencyMap from '../components/EmergencyMap';
 import { EmergencyLocationService } from '../services/emergencyLocationService';
+import * as Location from 'expo-location';
+import * as Battery from 'expo-battery';
 
 const TRUSTED_CONTACTS_KEY = 'trusted_contacts';
 const LOCATION_SHARING_KEY = 'location_sharing_active';
@@ -23,11 +25,36 @@ const LocationSharing = () => {
   const [isSharing, setIsSharing] = useState(false);
   const [currentLocation, setCurrentLocation] = useState(null);
   const [emergencyId, setEmergencyId] = useState(null);
+  const [locationUpdateInterval, setLocationUpdateInterval] = useState(null);
+  const [batteryLevel, setBatteryLevel] = useState(null);
+  const [accuracy, setAccuracy] = useState('high');
 
   useEffect(() => {
     loadTrustedContacts();
     checkLocationSharingStatus();
     getCurrentLocation();
+    const checkBatteryLevel = async () => {
+      const { status } = await Battery.getBatteryLevelAsync();
+      setBatteryLevel(status * 100);
+    };
+
+    checkBatteryLevel();
+    const batterySubscription = Battery.addBatteryLevelListener(({ batteryLevel }) => {
+      setBatteryLevel(batteryLevel * 100);
+      // Adjust location update frequency based on battery level
+      if (batteryLevel < 0.2) {
+        setAccuracy('balanced');
+      } else {
+        setAccuracy('high');
+      }
+    });
+
+    return () => {
+      if (batterySubscription) {
+        batterySubscription.remove();
+      }
+      stopLocationUpdates();
+    };
   }, []);
 
   const getCurrentLocation = async () => {
@@ -113,26 +140,76 @@ const LocationSharing = () => {
     }
   };
 
+  const startLocationUpdates = async () => {
+    try {
+      const { status } = await Location.requestBackgroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'Background location access is required for location sharing');
+        return;
+      }
+
+      // Start background location updates
+      const locationTask = await Location.startLocationUpdatesAsync('LOCATION_TRACKING', {
+        accuracy: Location.Accuracy[accuracy],
+        timeInterval: accuracy === 'high' ? 10000 : 30000, // 10s or 30s based on accuracy
+        distanceInterval: accuracy === 'high' ? 10 : 50, // 10m or 50m based on accuracy
+        foregroundService: {
+          notificationTitle: 'Emergency Location Sharing',
+          notificationBody: 'Your location is being shared with emergency contacts',
+          notificationColor: '#ff0000',
+        },
+        // Enable background location updates
+        mayShowUserSettingsDialog: true,
+        activityType: Location.ActivityType.OTHER,
+      });
+
+      setLocationUpdateInterval(locationTask);
+    } catch (error) {
+      console.error('Error starting location updates:', error);
+      Alert.alert('Error', 'Failed to start location sharing');
+    }
+  };
+
+  const stopLocationUpdates = async () => {
+    try {
+      if (locationUpdateInterval) {
+        await Location.stopLocationUpdatesAsync('LOCATION_TRACKING');
+        setLocationUpdateInterval(null);
+      }
+    } catch (error) {
+      console.error('Error stopping location updates:', error);
+    }
+  };
+
   const toggleLocationSharing = async (value) => {
     try {
       if (value) {
         const id = Date.now().toString();
-        await EmergencyLocationService.startLocationSharing(id);
+        await startLocationUpdates();
         setEmergencyId(id);
         
         // Share location with trusted contacts
         if (trustedContacts.length > 0) {
           const locationUrl = `https://your-emergency-app.com/track/${id}`;
-          const message = `I'm sharing my location with you during an emergency. Track me here: ${locationUrl}`;
+          const message = `I'm sharing my location with you during an emergency. Track me here: ${locationUrl}\nBattery Level: ${batteryLevel}%`;
           
           await Share.share({
             message,
             title: 'Emergency Location Sharing',
           });
+
+          // Store emergency session
+          await AsyncStorage.setItem('EMERGENCY_SESSION', JSON.stringify({
+            id,
+            startTime: Date.now(),
+            contacts: trustedContacts,
+            accuracy,
+          }));
         }
       } else {
         if (emergencyId) {
-          await EmergencyLocationService.stopLocationSharing(emergencyId);
+          await stopLocationUpdates();
+          await AsyncStorage.removeItem('EMERGENCY_SESSION');
         }
       }
 

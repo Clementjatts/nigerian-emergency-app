@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -46,6 +46,11 @@ const EmergencyFacilityFinder = () => {
     { maxAge: 12 * 60 * 60 * 1000 } // 12 hours cache
   );
 
+  const [selectedFacility, setSelectedFacility] = useState(null);
+  const [route, setRoute] = useState(null);
+  const [estimatedTime, setEstimatedTime] = useState(null);
+  const mapRef = useRef(null);
+
   const handleTypeSelect = (type) => {
     setSelectedType(type);
   };
@@ -86,12 +91,54 @@ const EmergencyFacilityFinder = () => {
     }
   };
 
+  const calculateRoute = async (facility) => {
+    try {
+      if (!currentRegion) return;
+
+      const origin = {
+        latitude: currentRegion.latitude,
+        longitude: currentRegion.longitude
+      };
+
+      const destination = {
+        latitude: facility.latitude,
+        longitude: facility.longitude
+      };
+
+      // Get route with traffic consideration
+      const routeData = await EmergencyLocationService.getRoute(origin, destination, {
+        mode: 'driving',
+        alternatives: true,
+        traffic: true
+      });
+
+      if (routeData) {
+        setRoute(routeData.routes[0]);
+        setEstimatedTime(routeData.duration);
+        setSelectedFacility(facility);
+
+        // Fit map to show entire route
+        mapRef.current?.fitToCoordinates(routeData.routes[0].coordinates, {
+          edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+          animated: true
+        });
+      }
+    } catch (error) {
+      console.error('Error calculating route:', error);
+    }
+  };
+
   const renderFacility = ({ item }) => (
     <View style={styles.facilityCard}>
       <View style={styles.facilityInfo}>
         <Text style={styles.facilityName}>{item.name}</Text>
         <Text style={styles.facilityType}>{item.type}</Text>
         <Text style={styles.facilityAddress}>{item.address}</Text>
+        {selectedFacility?.id === item.id && estimatedTime && (
+          <Text style={styles.estimatedTime}>
+            Estimated arrival: {Math.round(estimatedTime)} minutes
+          </Text>
+        )}
       </View>
       <View style={styles.facilityActions}>
         <TouchableOpacity
@@ -102,7 +149,7 @@ const EmergencyFacilityFinder = () => {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.actionButton}
-          onPress={() => handleGetDirections(item)}
+          onPress={() => calculateRoute(item)}
         >
           <MapPin size={24} color="#007AFF" />
         </TouchableOpacity>
@@ -153,10 +200,13 @@ const EmergencyFacilityFinder = () => {
 
       {facilities && facilities.length > 0 && (
         <EmergencyMap
+          ref={mapRef}
           style={styles.map}
           facilities={facilities}
           currentRegion={currentRegion}
           onRegionChange={setCurrentRegion}
+          route={route}
+          selectedFacility={selectedFacility}
         />
       )}
 
@@ -258,6 +308,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   facilityAddress: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 4,
+  },
+  estimatedTime: {
     fontSize: 14,
     color: '#666',
     marginTop: 4,

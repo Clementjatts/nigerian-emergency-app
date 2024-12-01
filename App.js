@@ -1,11 +1,22 @@
 import React, { useState, useEffect } from 'react';
+import { StatusBar } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { View, Text, StyleSheet } from 'react-native';
+import * as Sentry from '@sentry/react-native';
+import { ThemeProvider } from './src/context/ThemeContext';
+import { useTheme } from './src/context/ThemeContext';
 import { AuthProvider } from './src/context/AuthContext';
-import AppNavigator from './src/navigation/AppNavigator';
 import ErrorBoundary from './src/components/ErrorBoundary';
+import AppNavigator from './src/navigation/AppNavigator';
 import networkManager from './src/utils/networkManager';
 import offlineDataManager from './src/services/offlineDataManager';
+
+// Initialize Sentry
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  enableAutoSessionTracking: true,
+  sessionTrackingIntervalMillis: 30000,
+});
 
 const OfflineBanner = () => (
   <View style={styles.offlineBanner}>
@@ -15,7 +26,8 @@ const OfflineBanner = () => (
   </View>
 );
 
-export default function App() {
+const AppContent = () => {
+  const { currentTheme } = useTheme();
   const [isOnline, setIsOnline] = useState(true);
 
   useEffect(() => {
@@ -40,13 +52,41 @@ export default function App() {
   }, []);
 
   return (
-    <ErrorBoundary>
-      <SafeAreaProvider>
+    <>
+      <StatusBar
+        barStyle={currentTheme.statusBar}
+        backgroundColor={currentTheme.background}
+      />
+      <NavigationContainer
+        theme={{
+          dark: currentTheme === 'dark',
+          colors: {
+            primary: currentTheme.primary,
+            background: currentTheme.background,
+            card: currentTheme.surface,
+            text: currentTheme.text.primary,
+            border: currentTheme.border,
+            notification: currentTheme.primary,
+          },
+        }}
+      >
         <AuthProvider>
           {!isOnline && <OfflineBanner />}
           <AppNavigator />
         </AuthProvider>
-      </SafeAreaProvider>
+      </NavigationContainer>
+    </>
+  );
+};
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <ThemeProvider>
+        <SafeAreaProvider>
+          <AppContent />
+        </SafeAreaProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }
