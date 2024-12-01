@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "238921097789",
+    "project_id": "nigerian-emergency-app-426cd",
+    "storage_bucket": "nigerian-emergency-app-426cd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:238921097789:android:ac8fe33cd044aa29b04054",
+        "android_client_info": {
+          "package_name": "com.citizenshield.nigerianemergencyapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "238921097789-pin016l9rivrv88470nlh94e14khn0ho.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCIS1apBF1GOKkFeeyWwNr-44s6i4QXR7I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "238921097789-pin016l9rivrv88470nlh94e14khn0ho.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "238921097789-t1t79uae1b5h041dpbtbm87h8b5njfcm.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.citizenshield.nigerianemergencyapp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

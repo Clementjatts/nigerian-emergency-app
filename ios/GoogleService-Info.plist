@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>238921097789-t1t79uae1b5h041dpbtbm87h8b5njfcm.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.238921097789-t1t79uae1b5h041dpbtbm87h8b5njfcm</string>
+	<key>API_KEY</key>
+	<string>AIzaSyBXsyQ0LigQ-hq4_rUuGojn9aWlE_yNZGw</string>
+	<key>GCM_SENDER_ID</key>
+	<string>238921097789</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.citizenshield.nigerianemergencyapp</string>
+	<key>PROJECT_ID</key>
+	<string>nigerian-emergency-app-426cd</string>
+	<key>STORAGE_BUCKET</key>
+	<string>nigerian-emergency-app-426cd.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:238921097789:ios:777ea8331561134bb04054</string>
+</dict>
+</plist>

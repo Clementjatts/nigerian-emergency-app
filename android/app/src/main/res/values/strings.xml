@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Nigerian Emergency App</string>
+    <string name="default_notification_channel_id">general_notifications</string>
+    <string name="emergency_notification_channel_id">emergency_alerts</string>
+    <string name="responder_notification_channel_id">responder_updates</string>
+</resources>
