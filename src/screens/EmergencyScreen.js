@@ -15,7 +15,7 @@ import EmergencyQuickDial from '../components/EmergencyQuickDial';
 import { LoadingView, ErrorView } from '../utils/LoadingState';
 import notificationService from '../services/notificationService';
 import accessibilityService from '../services/accessibilityService';
-import { api } from '../services/api';
+import api from '../services/api';
 
 const EMERGENCY_TYPES = {
   police: {
@@ -202,4 +202,5 @@ const styles = StyleSheet.create({
   },
 });
 
+export { EmergencyScreen };
 export default EmergencyScreen;

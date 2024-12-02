@@ -4,18 +4,18 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
   Alert,
   ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { User, Gear, Bell, Phone, Lock, CaretRight } from 'phosphor-react-native';
-import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import api from '../services/api';
 import ProfileEditor from '../components/ProfileEditor';
 import ProfilePicture from '../components/ProfilePicture';
 import SettingsManager from '../components/SettingsManager';
-import EmergencyContactManager from '../components/EmergencyContactManager';
+import { EmergencyContactManager } from '../components/EmergencyContactManager';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
@@ -24,8 +24,8 @@ const ProfileScreen = () => {
   const [imageLoading, setImageLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [profile, setProfile] = useState({
-    name: '',
-    email: '',
+    name: authUser?.name || '',
+    email: authUser?.email || '',
     phone: '',
     avatar: null,
     bloodType: '',
@@ -39,7 +39,6 @@ const ProfileScreen = () => {
     theme: 'light',
     language: 'en',
   });
-  const [emergencyContacts, setEmergencyContacts] = useState([]);
 
   useEffect(() => {
     loadProfileData();
@@ -48,18 +47,38 @@ const ProfileScreen = () => {
   const loadProfileData = async () => {
     try {
       setLoading(true);
-      const response = await axios.get(`https://your-express-api.com/profile/${authUser.uid}`);
-      if (response.data) {
-        setProfile(response.data);
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        throw new Error('No authentication token found');
       }
-      const settingsResponse = await axios.get(`https://your-express-api.com/settings/${authUser.uid}`);
-      if (settingsResponse.data) {
-        setSettings(settingsResponse.data);
+
+      const response = await fetch(`${api.url}/auth/profile`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (response.status === 401) {
+        // Handle unauthorized access
+        logout();
+        return;
       }
-      const contactsResponse = await axios.get(`https://your-express-api.com/emergency-contacts/${authUser.uid}`);
-      setEmergencyContacts(contactsResponse.data || []);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to load profile');
+      }
+
+      const data = await response.json();
+      setProfile(data);
     } catch (error) {
-      Alert.alert('Error', 'Failed to load profile data');
+      console.error('Error loading profile:', error);
+      Alert.alert(
+        'Profile Error',
+        'Unable to load your profile. Please check your connection and try again.'
+      );
     } finally {
       setLoading(false);
     }
@@ -68,127 +87,123 @@ const ProfileScreen = () => {
   const handleProfileUpdate = async (updatedProfile) => {
     try {
       setLoading(true);
-      await axios.put(`https://your-express-api.com/profile/${authUser.uid}`, updatedProfile);
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      const response = await fetch(`${api.url}/auth/profile`, {
+        method: 'PUT',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(updatedProfile),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to update profile');
+      }
+
+      const data = await response.json();
+      setProfile(data);
       setEditMode(false);
       Alert.alert('Success', 'Profile updated successfully');
     } catch (error) {
-      Alert.alert('Error', 'Failed to update profile');
+      console.error('Error updating profile:', error);
+      Alert.alert(
+        'Update Error',
+        'Unable to update your profile. Please try again later.'
+      );
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSettingsUpdate = async (updatedSettings) => {
-    try {
-      await axios.put(`https://your-express-api.com/settings/${authUser.uid}`, updatedSettings);
-      setSettings(updatedSettings);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to update settings');
     }
   };
 
   const handleImageUpload = async (uri) => {
     try {
       setImageLoading(true);
-      const formData = new FormData();
-      formData.append('image', {
-        uri,
-        type: 'image/jpeg',
-        name: 'avatar.jpg',
-      });
-      const response = await axios.post(`https://your-express-api.com/upload-image/${authUser.uid}`, formData);
-      await axios.put(`https://your-express-api.com/profile/${authUser.uid}`, { avatar: response.data });
+      const imageUrl = await api.uploadProfileImage(uri);
+      await handleProfileUpdate({ ...profile, avatar: imageUrl });
+      setProfile(prev => ({ ...prev, avatar: imageUrl }));
     } catch (error) {
-      Alert.alert('Error', 'Failed to upload profile picture');
+      console.error('Failed to upload image:', error);
+      Alert.alert('Error', 'Failed to upload profile picture. Please try again.');
     } finally {
       setImageLoading(false);
+    }
+  };
+
+  const handleSettingsUpdate = async (updatedSettings) => {
+    try {
+      await api.updateSettings(updatedSettings);
+      setSettings(updatedSettings);
+    } catch (error) {
+      console.error('Failed to update settings:', error);
+      Alert.alert('Error', 'Failed to update settings. Please try again.');
     }
   };
 
   const handleLogout = async () => {
     try {
       await logout();
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Login' }],
-      });
+      navigation.replace('Login');
     } catch (error) {
-      Alert.alert('Error', 'Failed to logout');
+      console.error('Logout error:', error);
+      Alert.alert('Error', 'Failed to logout. Please try again.');
     }
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-      </View>
-    );
-  }
-
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <ProfilePicture
-          uri={profile.avatar}
-          onImageSelect={handleImageUpload}
-          loading={imageLoading}
-        />
-        <Text style={styles.name}>{profile.name}</Text>
-        <Text style={styles.email}>{profile.email}</Text>
-      </View>
-
-      {editMode ? (
-        <ProfileEditor
-          profile={profile}
-          onSave={handleProfileUpdate}
-          onCancel={() => setEditMode(false)}
-        />
+    <View style={styles.container}>
+      {loading ? (
+        <ActivityIndicator size="large" color="#2A9D8F" />
       ) : (
-        <View style={styles.section}>
-          <TouchableOpacity
-            style={styles.editButton}
-            onPress={() => setEditMode(true)}
-          >
-            <Text style={styles.editButtonText}>Edit Profile</Text>
-          </TouchableOpacity>
-
-          <View style={styles.infoItem}>
-            <User size={24} color="#666" />
-            <Text style={styles.infoLabel}>Blood Type:</Text>
-            <Text style={styles.infoValue}>{profile.bloodType || 'Not set'}</Text>
-          </View>
-
-          <View style={styles.infoItem}>
-            <Phone size={24} color="#666" />
-            <Text style={styles.infoLabel}>Phone:</Text>
-            <Text style={styles.infoValue}>{profile.phone || 'Not set'}</Text>
-          </View>
+        <View style={styles.content}>
+          <ProfilePicture
+            uri={profile.avatar}
+            onImageSelected={handleImageUpload}
+            loading={imageLoading}
+          />
+          <Text style={styles.name}>{profile.name}</Text>
+          <Text style={styles.email}>{profile.email}</Text>
+          
+          {editMode ? (
+            <ProfileEditor
+              profile={profile}
+              onSave={handleProfileUpdate}
+              onCancel={() => setEditMode(false)}
+              loading={loading}
+            />
+          ) : (
+            <View style={styles.sections}>
+              <TouchableOpacity
+                style={styles.editButton}
+                onPress={() => setEditMode(true)}
+              >
+                <Text style={styles.editButtonText}>Edit Profile</Text>
+              </TouchableOpacity>
+              
+              <SettingsManager 
+                settings={settings} 
+                onSettingChange={handleSettingsUpdate} 
+              />
+              
+              <EmergencyContactManager />
+              
+              <TouchableOpacity
+                style={styles.logoutButton}
+                onPress={handleLogout}
+              >
+                <Text style={styles.logoutButtonText}>Logout</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       )}
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Settings</Text>
-        <SettingsManager
-          settings={settings}
-          onUpdate={handleSettingsUpdate}
-        />
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Emergency Contacts</Text>
-        <EmergencyContactManager
-          contacts={emergencyContacts}
-          onUpdate={setEmergencyContacts}
-        />
-      </View>
-
-      <TouchableOpacity
-        style={styles.logoutButton}
-        onPress={handleLogout}
-      >
-        <Text style={styles.logoutButtonText}>Logout</Text>
-      </TouchableOpacity>
-    </ScrollView>
+    </View>
   );
 };
 
@@ -197,79 +212,48 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
-  loadingContainer: {
+  content: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  header: {
-    alignItems: 'center',
     padding: 20,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
   },
   name: {
     fontSize: 24,
     fontWeight: 'bold',
+    textAlign: 'center',
     marginTop: 10,
   },
   email: {
     fontSize: 16,
     color: '#666',
+    textAlign: 'center',
     marginTop: 5,
   },
-  section: {
-    backgroundColor: '#fff',
+  sections: {
     marginTop: 20,
-    padding: 15,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
-  },
-  infoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  infoLabel: {
-    fontSize: 16,
-    marginLeft: 10,
-    color: '#666',
-    width: 100,
-  },
-  infoValue: {
-    fontSize: 16,
-    flex: 1,
   },
   editButton: {
-    backgroundColor: '#007AFF',
-    padding: 10,
-    borderRadius: 5,
-    marginBottom: 15,
+    backgroundColor: '#2A9D8F',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 20,
   },
   editButtonText: {
     color: '#fff',
     textAlign: 'center',
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   logoutButton: {
-    backgroundColor: '#FF3B30',
-    padding: 15,
-    margin: 20,
-    borderRadius: 5,
+    backgroundColor: '#E63946',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 20,
   },
   logoutButtonText: {
     color: '#fff',
     textAlign: 'center',
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
   },
 });
 

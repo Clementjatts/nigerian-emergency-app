@@ -44,7 +44,7 @@ const HomeScreen = ({ navigation }) => {
       <ScrollView>
         <View style={styles.header}>
           <Text style={styles.welcomeText}>Welcome back,</Text>
-          <Text style={styles.userName}>{user?.email}</Text>
+          <Text style={styles.userName}>{user?.name || user?.email}</Text>
         </View>
 
         <View style={styles.emergencySection}>
@@ -106,13 +106,13 @@ const HomeScreen = ({ navigation }) => {
         <View style={styles.safetyTipsSection}>
           <Text style={styles.sectionTitle}>Safety Tips</Text>
           <View style={styles.safetyTip}>
-            <MapPin name="information-circle" size={24} color="#457B9D" />
+            <MapPin size={24} color="#457B9D" weight="bold" />
             <Text style={styles.safetyTipText}>
               Stay alert and aware of your surroundings at all times
             </Text>
           </View>
           <View style={styles.safetyTip}>
-            <Bell name="bulb" size={24} color="#457B9D" />
+            <Bell size={24} color="#457B9D" weight="bold" />
             <Text style={styles.safetyTipText}>
               Keep emergency numbers saved and easily accessible
             </Text>
@@ -221,3 +221,5 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+
+export default HomeScreen;

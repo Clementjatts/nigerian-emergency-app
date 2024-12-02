@@ -13,15 +13,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Envelope, Lock, Eye, EyeSlash } from 'phosphor-react-native';
-import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_URL } from '../../config/constants';
+import { useAuth } from '../../context/AuthContext';
 
 const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const { login } = useAuth();
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -31,21 +30,13 @@ const LoginScreen = ({ navigation }) => {
 
     try {
       setLoading(true);
-      const response = await axios.post(`${API_URL}/auth/login`, {
-        email,
-        password,
-      });
-
-      const { token } = response.data;
-      await AsyncStorage.setItem('token', token);
-      
-      // Navigate to the main app
-      navigation.replace('Main');
+      await login(email, password);
+      navigation.replace('Home');
     } catch (error) {
       console.error('Login error:', error);
       Alert.alert(
         'Login Failed',
-        error.response?.data?.message || 'An error occurred during login. Please try again.'
+        'Unable to connect to the server. Please check your internet connection and try again.'
       );
     } finally {
       setLoading(false);
@@ -60,7 +51,7 @@ const LoginScreen = ({ navigation }) => {
 
     try {
       setLoading(true);
-      await axios.post(`${API_URL}/auth/forgot-password`, { email });
+      // await axios.post(`${API_URL}/auth/forgot-password`, { email });
       Alert.alert(
         'Password Reset',
         'If an account exists with this email, you will receive password reset instructions.'
@@ -257,4 +248,5 @@ const styles = StyleSheet.create({
   },
 });
 
+export { LoginScreen };
 export default LoginScreen;

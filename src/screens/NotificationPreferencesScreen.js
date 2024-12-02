@@ -280,4 +280,5 @@ const styles = StyleSheet.create({
   },
 });
 
+export { NotificationPreferencesScreen };
 export default NotificationPreferencesScreen;

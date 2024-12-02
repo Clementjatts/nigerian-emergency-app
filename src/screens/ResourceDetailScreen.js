@@ -319,3 +319,5 @@ const styles = StyleSheet.create({
     margin: 20,
   },
 });
+
+export default ResourceDetailScreen;

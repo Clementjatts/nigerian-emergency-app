@@ -1,6 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api } from '../services/api';
+import api from '../services/api';
 
 const AuthContext = createContext({});
 
@@ -15,12 +15,21 @@ export const AuthProvider = ({ children }) => {
       try {
         const token = await AsyncStorage.getItem('token');
         if (token) {
-          const userData = await api.getProfile();
-          setUser(userData);
+          try {
+            const userData = await api.getProfile();
+            setUser(userData);
+          } catch (error) {
+            console.log('Failed to get profile, clearing token:', error);
+            await AsyncStorage.removeItem('token');
+            setUser(null);
+          }
+        } else {
+          setUser(null);
         }
       } catch (error) {
         console.error('Auth initialization error:', error);
         await AsyncStorage.removeItem('token');
+        setUser(null);
       } finally {
         setLoading(false);
       }

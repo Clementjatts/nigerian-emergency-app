@@ -212,4 +212,5 @@ const styles = StyleSheet.create({
   },
 });
 
+export { ContactFormScreen };
 export default ContactFormScreen;

@@ -340,4 +340,5 @@ const styles = StyleSheet.create({
   },
 });
 
+export { SafetyZonesScreen };
 export default SafetyZonesScreen;

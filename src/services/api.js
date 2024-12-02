@@ -1,100 +1,98 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import networkManager, { offlineStorage } from '../utils/networkManager';
 import { retryWithBackoff, retryQueue } from '../utils/retryMechanism';
+import { API_URL as BASE_URL } from '../config/constants';
 
-const API_URL = 'http://10.0.2.2:5000/api'; // For Android emulator
-// const API_URL = 'http://localhost:5000/api'; // For web/development
+const API_URL = BASE_URL; // Use the URL from constants
 
-const getHeaders = async () => {
-  const token = await AsyncStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    'Authorization': token ? `Bearer ${token}` : '',
-  };
-};
+const api = {
+  url: API_URL,
+  timeout: 10000, // 10 seconds timeout
 
-class ApiError extends Error {
-  constructor(message, status, code) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-    this.code = code;
-  }
-}
+  async request(endpoint, options = {}) {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const defaultHeaders = {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      };
 
-const handleApiResponse = async (response) => {
-  const data = await response.json();
-  
-  if (!response.ok) {
-    throw new ApiError(
-      data.message || 'An error occurred',
-      response.status,
-      data.code
-    );
-  }
-  
-  return data;
-};
+      if (token) {
+        defaultHeaders['Authorization'] = `Bearer ${token}`;
+      }
 
-const makeRequest = async (endpoint, options) => {
-  try {
-    const response = await fetch(`${API_URL}${endpoint}`, options);
-    return await handleApiResponse(response);
-  } catch (error) {
-    if (!error.status) {
-      error.name = 'NetworkError';
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+      const response = await fetch(`${this.url}${endpoint}`, {
+        ...options,
+        headers: {
+          ...defaultHeaders,
+          ...options.headers,
+        },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Network response was not ok');
+      }
+
+      return await response.json();
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new Error('Request timed out');
+      }
+      throw error;
     }
-    throw error;
-  }
-};
+  },
 
-export const api = {
-  // Auth
-  register: async (userData) => {
-    return await retryWithBackoff(async () => {
-      return await makeRequest('/auth/register', {
+  // Auth endpoints
+  async register(userData) {
+    return this.request('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    });
+  },
+
+  async login({ email, password }) {
+    try {
+      const response = await this.request('/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(userData),
+        body: JSON.stringify({ email, password }),
       });
-    });
+
+      const data = await response.json();
+      return {
+        token: data.token,
+        user: data.user,
+      };
+    } catch (error) {
+      throw error;
+    }
   },
 
-  login: async (credentials) => {
-    return await retryWithBackoff(async () => {
-      return await makeRequest('/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(credentials),
-      });
-    });
+  getProfile() {
+    return this.request('/auth/profile');
   },
 
-  getProfile: async () => {
-    return await retryWithBackoff(async () => {
-      return await makeRequest('/auth/profile', {
-        headers: await getHeaders(),
-      });
-    });
-  },
-
-  // Emergencies
-  createEmergency: async (emergencyData) => {
-    const isOnline = await networkManager.isNetworkAvailable();
+  // Emergencies endpoints
+  createEmergency(emergencyData) {
+    const isOnline = networkManager.isNetworkAvailable();
     const emergencyId = `emergency_${Date.now()}`;
 
     if (!isOnline) {
-      await offlineStorage.saveOfflineData(emergencyId, {
+      offlineStorage.saveOfflineData(emergencyId, {
         type: 'emergency',
         data: emergencyData,
       });
       
-      // Queue the operation for when we're back online
       retryQueue.add(
         async () => {
-          const result = await makeRequest('/emergencies', {
+          const result = await this.request('/emergencies', {
             method: 'POST',
-            headers: await getHeaders(),
             body: JSON.stringify(emergencyData),
           });
           await offlineStorage.markAsSynced(emergencyId);
@@ -110,44 +108,36 @@ export const api = {
       };
     }
 
-    return await retryWithBackoff(async () => {
-      return await makeRequest('/emergencies', {
-        method: 'POST',
-        headers: await getHeaders(),
-        body: JSON.stringify(emergencyData),
-      });
+    return this.request('/emergencies', {
+      method: 'POST',
+      body: JSON.stringify(emergencyData),
     });
   },
 
-  getUserEmergencies: async () => {
-    const isOnline = await networkManager.isNetworkAvailable();
+  getUserEmergencies() {
+    const isOnline = networkManager.isNetworkAvailable();
     
     if (!isOnline) {
-      const offlineData = await offlineStorage.getAllUnsyncedData();
+      const offlineData = offlineStorage.getAllUnsyncedData();
       return offlineData.filter(item => item.data.type === 'emergency');
     }
 
-    return await retryWithBackoff(async () => {
-      return await makeRequest('/emergencies/user', {
-        headers: await getHeaders(),
-      });
-    });
+    return this.request('/emergencies/user');
   },
 
-  updateEmergencyStatus: async (emergencyId, status) => {
-    const isOnline = await networkManager.isNetworkAvailable();
+  updateEmergencyStatus(emergencyId, status) {
+    const isOnline = networkManager.isNetworkAvailable();
     
     if (!isOnline) {
-      await offlineStorage.saveOfflineData(`status_${emergencyId}`, {
+      offlineStorage.saveOfflineData(`status_${emergencyId}`, {
         type: 'status_update',
         data: { emergencyId, status },
       });
       
       retryQueue.add(
         async () => {
-          const result = await makeRequest(`/emergencies/${emergencyId}/status`, {
+          const result = await this.request(`/emergencies/${emergencyId}/status`, {
             method: 'PUT',
-            headers: await getHeaders(),
             body: JSON.stringify({ status }),
           });
           await offlineStorage.markAsSynced(`status_${emergencyId}`);
@@ -162,53 +152,41 @@ export const api = {
       };
     }
 
-    return await retryWithBackoff(async () => {
-      return await makeRequest(`/emergencies/${emergencyId}/status`, {
-        method: 'PUT',
-        headers: await getHeaders(),
-        body: JSON.stringify({ status }),
-      });
+    return this.request(`/emergencies/${emergencyId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
     });
   },
 
-  // Contacts
-  getContacts: async () => {
-    const isOnline = await networkManager.isNetworkAvailable();
+  // Contacts endpoints
+  getContacts() {
+    const isOnline = networkManager.isNetworkAvailable();
     
     if (!isOnline) {
-      const cachedContacts = await offlineStorage.getOfflineData('contacts');
+      const cachedContacts = offlineStorage.getOfflineData('contacts');
       if (cachedContacts) {
         return cachedContacts.data;
       }
       throw new Error('No cached contacts available offline');
     }
 
-    const contacts = await retryWithBackoff(async () => {
-      return await makeRequest('/contacts', {
-        headers: await getHeaders(),
-      });
-    });
-
-    // Cache contacts for offline use
-    await offlineStorage.saveOfflineData('contacts', contacts);
-    return contacts;
+    return this.request('/contacts');
   },
 
-  addContact: async (contactData) => {
-    const isOnline = await networkManager.isNetworkAvailable();
+  addContact(contactData) {
+    const isOnline = networkManager.isNetworkAvailable();
     const contactId = `contact_${Date.now()}`;
     
     if (!isOnline) {
-      await offlineStorage.saveOfflineData(contactId, {
+      offlineStorage.saveOfflineData(contactId, {
         type: 'contact',
         data: contactData,
       });
       
       retryQueue.add(
         async () => {
-          const result = await makeRequest('/contacts', {
+          const result = await this.request('/contacts', {
             method: 'POST',
-            headers: await getHeaders(),
             body: JSON.stringify(contactData),
           });
           await offlineStorage.markAsSynced(contactId);
@@ -224,29 +202,25 @@ export const api = {
       };
     }
 
-    return await retryWithBackoff(async () => {
-      return await makeRequest('/contacts', {
-        method: 'POST',
-        headers: await getHeaders(),
-        body: JSON.stringify(contactData),
-      });
+    return this.request('/contacts', {
+      method: 'POST',
+      body: JSON.stringify(contactData),
     });
   },
 
-  updateContact: async (contactId, contactData) => {
-    const isOnline = await networkManager.isNetworkAvailable();
+  updateContact(contactId, contactData) {
+    const isOnline = networkManager.isNetworkAvailable();
     
     if (!isOnline) {
-      await offlineStorage.saveOfflineData(`update_${contactId}`, {
+      offlineStorage.saveOfflineData(`update_${contactId}`, {
         type: 'contact_update',
         data: { contactId, ...contactData },
       });
       
       retryQueue.add(
         async () => {
-          const result = await makeRequest(`/contacts/${contactId}`, {
+          const result = await this.request(`/contacts/${contactId}`, {
             method: 'PUT',
-            headers: await getHeaders(),
             body: JSON.stringify(contactData),
           });
           await offlineStorage.markAsSynced(`update_${contactId}`);
@@ -261,29 +235,25 @@ export const api = {
       };
     }
 
-    return await retryWithBackoff(async () => {
-      return await makeRequest(`/contacts/${contactId}`, {
-        method: 'PUT',
-        headers: await getHeaders(),
-        body: JSON.stringify(contactData),
-      });
+    return this.request(`/contacts/${contactId}`, {
+      method: 'PUT',
+      body: JSON.stringify(contactData),
     });
   },
 
-  deleteContact: async (contactId) => {
-    const isOnline = await networkManager.isNetworkAvailable();
+  deleteContact(contactId) {
+    const isOnline = networkManager.isNetworkAvailable();
     
     if (!isOnline) {
-      await offlineStorage.saveOfflineData(`delete_${contactId}`, {
+      offlineStorage.saveOfflineData(`delete_${contactId}`, {
         type: 'contact_delete',
         data: { contactId },
       });
       
       retryQueue.add(
         async () => {
-          const result = await makeRequest(`/contacts/${contactId}`, {
+          const result = await this.request(`/contacts/${contactId}`, {
             method: 'DELETE',
-            headers: await getHeaders(),
           });
           await offlineStorage.markAsSynced(`delete_${contactId}`);
           return result;
@@ -297,11 +267,10 @@ export const api = {
       };
     }
 
-    return await retryWithBackoff(async () => {
-      return await makeRequest(`/contacts/${contactId}`, {
-        method: 'DELETE',
-        headers: await getHeaders(),
-      });
+    return this.request(`/contacts/${contactId}`, {
+      method: 'DELETE',
     });
   },
 };
+
+export default api;

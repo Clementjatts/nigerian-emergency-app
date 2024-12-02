@@ -304,3 +304,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 });
+
+export { NewPostScreen };
+export default NewPostScreen;

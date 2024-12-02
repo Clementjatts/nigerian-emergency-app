@@ -16,8 +16,10 @@ import { User, Envelope, Lock, Eye, EyeSlash, Phone } from 'phosphor-react-nativ
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from '../../config/constants';
+import { useAuth } from '../../context/AuthContext';
 
 const RegisterScreen = ({ navigation }) => {
+  const { register } = useAuth();
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
@@ -42,24 +44,44 @@ const RegisterScreen = ({ navigation }) => {
 
     try {
       setLoading(true);
-      const response = await axios.post(`${API_URL}/auth/register`, {
+      console.log('Making registration request to:', `${API_URL}/auth/register`);
+      console.log('Registration data:', {
+        name: formData.fullName,
+        email: formData.email,
+        phone: formData.phone,
+      });
+      
+      // Use the register function from AuthContext
+      await register({
         name: formData.fullName,
         email: formData.email,
         phone: formData.phone,
         password: formData.password,
       });
 
-      const { token } = response.data;
-      await AsyncStorage.setItem('token', token);
-
-      // Navigate to the main app
-      navigation.replace('Main');
+      // Navigate to the Home screen
+      navigation.replace('Home');
     } catch (error) {
-      console.error('Registration error:', error);
-      Alert.alert(
-        'Registration Failed',
-        error.response?.data?.message || 'An error occurred during registration. Please try again.'
-      );
+      console.error('Full registration error:', error);
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        config: error.config,
+        response: error.response
+      });
+      
+      // Handle duplicate email error
+      if (error.response?.data?.code === 11000) {
+        Alert.alert(
+          'Registration Failed',
+          'This email address is already registered. Please use a different email or try logging in.'
+        );
+      } else {
+        Alert.alert(
+          'Registration Failed',
+          error.response?.data?.message || 'An error occurred during registration. Please try again.'
+        );
+      }
     } finally {
       setLoading(false);
     }

@@ -29,20 +29,42 @@ export const EmergencyContactManager = () => {
   const loadEmergencyContacts = async () => {
     try {
       setLoading(true);
-      const authToken = await AsyncStorage.getItem('token');
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        console.warn('No auth token found');
+        return;
+      }
+
       const response = await fetch(`${API_URL}/contacts/emergency`, {
         headers: {
-          'Authorization': `Bearer ${authToken}`,
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${token}`,
         },
       });
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message);
+      if (response.status === 401) {
+        console.warn('Unauthorized access, token might be invalid');
+        return;
+      }
 
-      setEmergencyContacts(data.contacts);
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Server returned non-JSON response');
+      }
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to load contacts');
+      }
+
+      setEmergencyContacts(data.contacts || []);
     } catch (error) {
       console.error('Error loading emergency contacts:', error);
-      Alert.alert('Error', 'Failed to load emergency contacts');
+      Alert.alert(
+        'Error',
+        'Failed to load emergency contacts. Please check your connection and try again.'
+      );
+      setEmergencyContacts([]);
     } finally {
       setLoading(false);
     }
@@ -77,27 +99,57 @@ export const EmergencyContactManager = () => {
   const saveEmergencyContact = async (contactData) => {
     try {
       setLoading(true);
-      const authToken = await AsyncStorage.getItem('token');
       const response = await fetch(`${API_URL}/contacts/emergency`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${await AsyncStorage.getItem('token')}`,
         },
         body: JSON.stringify(contactData),
       });
 
+      // Check if response is JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Server returned non-JSON response');
+      }
+
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message);
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to save contact');
+      }
 
       setEmergencyContacts([...emergencyContacts, data.contact]);
       return data.contact;
     } catch (error) {
       console.error('Error saving emergency contact:', error);
-      Alert.alert('Error', 'Failed to save emergency contact');
+      Alert.alert('Error', 'Failed to save emergency contact. Please try again.');
       throw error;
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveContactDetails = async (details) => {
+    try {
+      setLoading(true);
+      const contactData = {
+        ...selectedContact,
+        ...details,
+      };
+
+      const savedContact = await saveEmergencyContact(contactData);
+      if (savedContact) {
+        setShowRelationshipModal(false);
+        Alert.alert('Success', 'Emergency contact saved successfully');
+      }
+    } catch (error) {
+      console.error('Error saving contact details:', error);
+      Alert.alert('Error', 'Failed to save contact details. Please try again.');
+    } finally {
+      setLoading(false);
+      setSelectedContact(null);
     }
   };
 
@@ -121,24 +173,6 @@ export const EmergencyContactManager = () => {
     } catch (error) {
       console.error('Error deleting emergency contact:', error);
       Alert.alert('Error', 'Failed to delete emergency contact');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSaveContactDetails = async (details) => {
-    try {
-      setLoading(true);
-      const contactData = {
-        ...selectedContact,
-        ...details,
-      };
-
-      await saveEmergencyContact(contactData);
-      setShowRelationshipModal(false);
-    } catch (error) {
-      console.error('Error saving contact details:', error);
-      Alert.alert('Error', 'Failed to save contact details');
     } finally {
       setLoading(false);
     }

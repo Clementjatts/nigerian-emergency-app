@@ -96,35 +96,32 @@ const PostCard = ({ post, onPress }) => {
 };
 
 const CommunityScreen = ({ navigation }) => {
-  const [refreshing, setRefreshing] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [refreshing, setRefreshing] = useState(false);
 
-  const categories = [
-    { id: 'all', label: 'All' },
-    { id: 'security', label: 'Security' },
-    { id: 'announcement', label: 'Announcements' },
-    { id: 'discussion', label: 'Discussions' },
-  ];
+  const categories = ['All', 'Alerts', 'Tips', 'Events', 'Discussion'];
+
+  const onRefresh = React.useCallback(() => {
+    setRefreshing(true);
+    // Simulate fetching data
+    setTimeout(() => {
+      setRefreshing(false);
+    }, 2000);
+  }, []);
 
   const filteredPosts = MOCK_POSTS.filter(post => {
-    const matchesCategory = selectedCategory === 'all' || post.category === selectedCategory;
     const matchesSearch = post.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          post.content.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
+    const matchesCategory = selectedCategory === 'All' || post.category === selectedCategory;
+    return matchesSearch && matchesCategory;
   });
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    // TODO: Implement refresh logic with Firebase
-    setTimeout(() => setRefreshing(false), 1000);
-  };
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.searchContainer}>
-          <MagnifyingGlass size={20} color="#666" />
+      <View style={styles.searchContainer}>
+        <View style={styles.searchBar}>
+          <MagnifyingGlass size={20} color="#666" weight="bold" />
           <TextInput
             style={styles.searchInput}
             placeholder="Search community posts..."
@@ -132,12 +129,6 @@ const CommunityScreen = ({ navigation }) => {
             onChangeText={setSearchQuery}
           />
         </View>
-        <TouchableOpacity
-          style={styles.newPostButton}
-          onPress={() => navigation.navigate('NewPost')}
-        >
-          <Plus size={24} color="#fff" />
-        </TouchableOpacity>
       </View>
 
       <View style={styles.categoriesContainer}>
@@ -145,12 +136,12 @@ const CommunityScreen = ({ navigation }) => {
           horizontal
           showsHorizontalScrollIndicator={false}
           data={categories}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item) => item}
           renderItem={({ item }) => (
             <CategoryChip
-              label={item.label}
-              active={selectedCategory === item.id}
-              onPress={() => setSelectedCategory(item.id)}
+              label={item}
+              active={selectedCategory === item}
+              onPress={() => setSelectedCategory(item)}
             />
           )}
           contentContainerStyle={styles.categoriesList}
@@ -166,11 +157,22 @@ const CommunityScreen = ({ navigation }) => {
             onPress={() => navigation.navigate('PostDetail', { post: item })}
           />
         )}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
         contentContainerStyle={styles.postsList}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#E63946']}
+          />
+        }
       />
+
+      <TouchableOpacity
+        style={styles.fab}
+        onPress={() => navigation.navigate('NewPost')}
+      >
+        <Plus size={24} color="#fff" weight="bold" />
+      </TouchableOpacity>
     </SafeAreaView>
   );
 };
@@ -180,35 +182,21 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#fff',
   },
-  header: {
-    flexDirection: 'row',
-    padding: 15,
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E1E1E1',
-  },
   searchContainer: {
-    flex: 1,
+    padding: 15,
+  },
+  searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F1FAEE',
     borderRadius: 20,
     paddingHorizontal: 15,
-    marginRight: 10,
   },
   searchInput: {
     flex: 1,
     paddingVertical: 8,
     marginLeft: 10,
     fontSize: 16,
-  },
-  newPostButton: {
-    backgroundColor: '#E63946',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   categoriesContainer: {
     paddingVertical: 10,
@@ -307,4 +295,17 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 14,
   },
+  fab: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    backgroundColor: '#E63946',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 });
+
+export default CommunityScreen;

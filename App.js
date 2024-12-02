@@ -57,24 +57,24 @@ const AppContent = () => {
         barStyle={currentTheme.statusBar}
         backgroundColor={currentTheme.background}
       />
-      <NavigationContainer
-        theme={{
-          dark: currentTheme === 'dark',
-          colors: {
-            primary: currentTheme.primary,
-            background: currentTheme.background,
-            card: currentTheme.surface,
-            text: currentTheme.text.primary,
-            border: currentTheme.border,
-            notification: currentTheme.primary,
-          },
-        }}
-      >
-        <AuthProvider>
+      <AuthProvider>
+        <NavigationContainer
+          theme={{
+            dark: currentTheme === 'dark',
+            colors: {
+              primary: currentTheme.primary,
+              background: currentTheme.background,
+              card: currentTheme.surface,
+              text: currentTheme.text.primary,
+              border: currentTheme.border,
+              notification: currentTheme.primary,
+            },
+          }}
+        >
           {!isOnline && <OfflineBanner />}
           <AppNavigator />
-        </AuthProvider>
-      </NavigationContainer>
+        </NavigationContainer>
+      </AuthProvider>
     </>
   );
 };
