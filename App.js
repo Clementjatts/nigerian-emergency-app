@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StatusBar } from 'react-native';
+import { StatusBar, StyleSheet, View, Text } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Sentry from '@sentry/react-native';

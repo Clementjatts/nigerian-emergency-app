@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -72,12 +73,12 @@ class ThemeService {
 
   static useTheme() {
     const systemColorScheme = useColorScheme();
-    const [theme, setTheme] = React.useState('system');
-    const [currentTheme, setCurrentTheme] = React.useState(
+    const [theme, setTheme] = useState('system');
+    const [currentTheme, setCurrentTheme] = useState(
       systemColorScheme === 'dark' ? darkTheme : lightTheme
     );
 
-    React.useEffect(() => {
+    useEffect(() => {
       const loadTheme = async () => {
         const savedTheme = await ThemeService.getTheme();
         setTheme(savedTheme);
@@ -85,7 +86,7 @@ class ThemeService {
       loadTheme();
     }, []);
 
-    React.useEffect(() => {
+    useEffect(() => {
       switch (theme) {
         case 'dark':
           setCurrentTheme(darkTheme);

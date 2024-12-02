@@ -2,7 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import networkManager, { offlineStorage } from '../utils/networkManager';
 import { retryWithBackoff, retryQueue } from '../utils/retryMechanism';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = 'http://10.0.2.2:5000/api'; // For Android emulator
+// const API_URL = 'http://localhost:5000/api'; // For web/development
 
 const getHeaders = async () => {
   const token = await AsyncStorage.getItem('token');

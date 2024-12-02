@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
+import { Police, FirstAid, Siren, Warning } from 'phosphor-react-native';
 import EmergencyButton from '../components/EmergencyButton';
 import EmergencyStatus from '../components/EmergencyStatus';
 import EmergencyConfirmation from '../components/EmergencyConfirmation';
@@ -37,7 +38,7 @@ const EMERGENCY_TYPES = {
   },
   security: {
     title: 'Security Threat',
-    icon: MapPin,
+    icon: Warning,
     color: '#457B9D',
     number: '112',
   },

@@ -7,6 +7,7 @@ const path = require('path');
 const socketService = require('./services/socketService');
 
 // Import routes
+const authRoutes = require('./routes/authRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const alertRoutes = require('./routes/alertRoutes');
 const resourceRoutes = require('./routes/resourceRoutes');
@@ -37,13 +38,12 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 mongoose.connect(process.env.MONGODB_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-  useCreateIndex: true,
-  useFindAndModify: false
 })
 .then(() => console.log('Connected to MongoDB'))
-.catch(err => console.error('MongoDB connection error:', err));
+.catch((err) => console.error('MongoDB connection error:', err));
 
 // Routes
+app.use('/api/auth', authRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/api/alerts', alertRoutes);
 app.use('/api/resources', resourceRoutes);
@@ -60,7 +60,7 @@ app.use((err, req, res, next) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`Server is running on port ${PORT}`);
 });
