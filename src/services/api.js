@@ -7,7 +7,7 @@ const API_URL = BASE_URL; // Use the URL from constants
 
 const api = {
   url: API_URL,
-  timeout: 10000, // 10 seconds timeout
+  timeout: 30000, // Increased timeout to 30 seconds
 
   async request(endpoint, options = {}) {
     try {
@@ -59,17 +59,39 @@ const api = {
 
   async login({ email, password }) {
     try {
-      const response = await this.request('/auth/login', {
+      const response = await fetch(`${this.url}/auth/login`, {
         method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ email, password }),
       });
 
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Server returned invalid content type');
+      }
+
       const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Login failed');
+      }
+
+      if (!data.token || !data.user) {
+        throw new Error('Invalid response from server');
+      }
+
       return {
         token: data.token,
         user: data.user,
       };
     } catch (error) {
+      if (error instanceof SyntaxError) {
+        console.error('JSON Parse error:', error);
+        throw new Error('Server returned invalid response format');
+      }
       throw error;
     }
   },

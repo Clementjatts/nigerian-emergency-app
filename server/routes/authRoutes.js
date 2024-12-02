@@ -19,11 +19,25 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+    
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    console.log('Login attempt for email:', email);
+    
     const user = await User.findByCredentials(email, password);
     const token = await user.generateAuthToken();
-    res.send({ user, token });
+    
+    console.log('Login successful for user:', user._id);
+    
+    res.json({
+      user: user.toJSON(),
+      token
+    });
   } catch (error) {
-    res.status(401).send({ error: 'Invalid login credentials' });
+    console.error('Login error:', error.message);
+    res.status(401).json({ error: error.message || 'Invalid login credentials' });
   }
 });
 

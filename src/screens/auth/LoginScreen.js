@@ -19,27 +19,28 @@ const LoginScreen = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
 
   const handleLogin = async () => {
     if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+      Alert.alert('Error', 'Please enter both email and password');
       return;
     }
 
+    setIsLoading(true);
     try {
-      setLoading(true);
-      await login(email, password);
-      navigation.replace('Home');
+      const success = await login(email, password);
+      if (success) {
+        // The navigation will be handled by AppNavigator based on auth state
+        console.log('Login successful');
+      } else {
+        Alert.alert('Error', 'Invalid credentials');
+      }
     } catch (error) {
-      console.error('Login error:', error);
-      Alert.alert(
-        'Login Failed',
-        'Unable to connect to the server. Please check your internet connection and try again.'
-      );
+      Alert.alert('Error', error.message || 'Login failed');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -50,7 +51,7 @@ const LoginScreen = ({ navigation }) => {
     }
 
     try {
-      setLoading(true);
+      setIsLoading(true);
       // await axios.post(`${API_URL}/auth/forgot-password`, { email });
       Alert.alert(
         'Password Reset',
@@ -60,7 +61,7 @@ const LoginScreen = ({ navigation }) => {
       console.error('Password reset error:', error);
       Alert.alert('Error', 'Failed to send password reset email. Please try again.');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
@@ -128,11 +129,11 @@ const LoginScreen = ({ navigation }) => {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.loginButton, loading && styles.loginButtonDisabled]}
+              style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
               onPress={handleLogin}
-              disabled={loading}
+              disabled={isLoading}
             >
-              {loading ? (
+              {isLoading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
                 <Text style={styles.loginButtonText}>Login</Text>

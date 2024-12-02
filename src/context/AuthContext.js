@@ -8,6 +8,7 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [token, setToken] = useState(null);
 
   useEffect(() => {
     // Check for stored token and user data
@@ -41,14 +42,28 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       setLoading(true);
-      setError(null);
-      const { token, user: userData } = await api.login({ email, password });
-      await AsyncStorage.setItem('token', token);
-      setUser(userData);
-      return userData;
-    } catch (err) {
-      setError(err.message);
-      throw err;
+      
+      console.log('Attempting login for:', email);
+      
+      const response = await api.login({ email, password });
+      
+      if (!response || !response.token) {
+        throw new Error('Invalid response from server');
+      }
+      
+      await AsyncStorage.setItem('token', response.token);
+      await AsyncStorage.setItem('user', JSON.stringify(response.user));
+      
+      setUser(response.user);
+      setToken(response.token);
+      
+      console.log('Login successful');
+      
+      return true;
+    } catch (error) {
+      console.error('Login error:', error.message);
+      setError(error.message || 'Login failed. Please check your credentials.');
+      return false;
     } finally {
       setLoading(false);
     }

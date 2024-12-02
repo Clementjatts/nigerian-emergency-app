@@ -13,7 +13,8 @@ const userSchema = new mongoose.Schema({
     required: true,
     unique: true,
     trim: true,
-    lowercase: true
+    lowercase: true,
+    index: true
   },
   password: {
     type: String,
@@ -126,17 +127,29 @@ userSchema.methods.toJSON = function() {
 
 // Static method to find user by credentials
 userSchema.statics.findByCredentials = async (email, password) => {
-  const user = await User.findOne({ email });
-  if (!user) {
-    throw new Error('Invalid login credentials');
-  }
+  try {
+    console.log('Finding user with email:', email);
+    const user = await User.findOne({ email }).maxTimeMS(20000); // Add timeout of 20 seconds
+    
+    if (!user) {
+      console.log('No user found with email:', email);
+      throw new Error('Invalid login credentials');
+    }
 
-  const isMatch = await bcrypt.compare(password, user.password);
-  if (!isMatch) {
-    throw new Error('Invalid login credentials');
-  }
+    console.log('User found, checking password');
+    const isMatch = await bcrypt.compare(password, user.password);
+    
+    if (!isMatch) {
+      console.log('Password does not match');
+      throw new Error('Invalid login credentials');
+    }
 
-  return user;
+    console.log('Password matches, login successful');
+    return user;
+  } catch (error) {
+    console.error('Error in findByCredentials:', error);
+    throw error;
+  }
 };
 
 const User = mongoose.model('User', userSchema);
